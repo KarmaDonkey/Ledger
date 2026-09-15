@@ -1,0 +1,977 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ledger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #EDE8DC;
+    --surface: #E4DDCB;
+    --surface-2: #DCD4BF;
+    --ink: #2A2620;
+    --ink-soft: #6B6250;
+    --ink-faint: #8E846E;
+    --accent: #96721C;
+    --good: #4B6B45;
+    --over: #8C3B32;
+    --hairline: rgba(42, 38, 32, 0.14);
+    --shadow: rgba(42, 38, 32, 0.16);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #1B1917;
+      --surface: #242220;
+      --surface-2: #2C2A26;
+      --ink: #EDE6D8;
+      --ink-soft: #A69C89;
+      --ink-faint: #7A7263;
+      --accent: #C9A227;
+      --good: #7FA36E;
+      --over: #C06256;
+      --hairline: rgba(237, 230, 216, 0.12);
+      --shadow: rgba(0, 0, 0, 0.4);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #1B1917;
+    --surface: #242220;
+    --surface-2: #2C2A26;
+    --ink: #EDE6D8;
+    --ink-soft: #A69C89;
+    --ink-faint: #7A7263;
+    --accent: #C9A227;
+    --good: #7FA36E;
+    --over: #C06256;
+    --hairline: rgba(237, 230, 216, 0.12);
+    --shadow: rgba(0, 0, 0, 0.4);
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    min-height: 100%;
+  }
+  body { padding-bottom: max(24px, env(safe-area-inset-bottom)); }
+  .mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; }
+
+  .page {
+    max-width: 460px;
+    margin: 0 auto;
+    min-height: 100vh;
+  }
+
+  /* ---- Header ---- */
+  header {
+    padding: max(20px, env(safe-area-inset-top)) 20px 4px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .date-label { font-size: 13px; color: var(--ink-soft); letter-spacing: 0.02em; margin: 0; }
+  .header-actions { display: flex; gap: 6px; margin: -6px -6px 0 0; }
+  .icon-btn {
+    background: none;
+    border: none;
+    padding: 8px;
+    cursor: pointer;
+    color: var(--ink-soft);
+    border-radius: 8px;
+    display: flex;
+  }
+  .icon-btn:active { background: var(--hairline); }
+  .icon-btn svg { width: 20px; height: 20px; display: block; }
+  .icon-btn.primary { color: var(--accent); }
+
+  /* ---- Panel (replaces the old bottom sheets — sits in normal flow, always reachable) ---- */
+  .panel {
+    margin: 0 20px 18px;
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: 14px;
+    padding: 16px 16px 14px;
+  }
+  .panel[hidden] { display: none; }
+  .panel h2 {
+    font-family: 'Source Serif 4', Georgia, serif;
+    font-weight: 600;
+    font-size: 19px;
+    margin: 0 0 14px;
+  }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 12px; color: var(--ink-soft); margin-bottom: 6px; }
+  .field input {
+    width: 100%;
+    background: var(--surface-2);
+    border: 1px solid var(--hairline);
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 17px;
+    color: var(--ink);
+    font-family: inherit;
+  }
+  .field input.mono-input { font-family: 'IBM Plex Mono', monospace; }
+  .field input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .hint { font-size: 12px; color: var(--ink-faint); margin-top: 4px; }
+  .diag-divider { border-top: 1px solid var(--hairline); margin: 16px 0 14px; }
+  .diag-block p.hint { font-size: 12.5px; line-height: 1.5; }
+
+  .panel-actions { display: flex; gap: 10px; margin-top: 4px; }
+  .btn {
+    flex: 1;
+    padding: 12px;
+    border-radius: 10px;
+    border: none;
+    font-size: 15px;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  .btn-primary { background: var(--accent); color: var(--bg); }
+  .btn-secondary { background: transparent; color: var(--ink-soft); }
+  .btn:active { opacity: 0.8; }
+
+  .scan-link {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    background: none;
+    border: none;
+    padding: 12px 0 2px;
+    margin-top: 4px;
+    font-size: 14px;
+    font-family: inherit;
+    color: var(--ink-soft);
+    cursor: pointer;
+  }
+  .scan-link svg { width: 15px; height: 15px; }
+  .scan-link:active { opacity: 0.7; }
+
+  .scan-intro { font-size: 14px; color: var(--ink-soft); line-height: 1.5; margin: 0 0 14px; }
+  .scan-upload {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border: 1px dashed var(--ink-faint);
+    border-radius: 12px;
+    padding: 22px 14px;
+    color: var(--ink-soft);
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .scan-upload svg { width: 18px; height: 18px; }
+  .scan-status { font-size: 14px; color: var(--ink-soft); text-align: center; padding: 14px 0; }
+  .scan-rows { max-height: 44vh; overflow-y: auto; margin: 4px 0 14px; }
+  .scan-row { display: flex; align-items: center; gap: 8px; padding: 9px 0; border-bottom: 1px solid var(--hairline); }
+  .scan-row:last-child { border-bottom: none; }
+  .scan-row input[type="checkbox"] { width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--accent); }
+  .scan-row .scan-desc {
+    flex: 1; min-width: 0;
+    background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 8px;
+    padding: 8px 10px; font-size: 14px; color: var(--ink); font-family: inherit;
+  }
+  .scan-row .scan-amt {
+    width: 80px; flex-shrink: 0;
+    background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 8px;
+    padding: 8px 10px; font-size: 14px; font-family: 'IBM Plex Mono', monospace; color: var(--ink); text-align: right;
+  }
+  .scan-error { font-size: 13px; color: var(--over); margin: 0 0 12px; }
+
+  .import-textarea {
+    width: 100%;
+    background: var(--surface-2);
+    border: 1px solid var(--hairline);
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 14px;
+    color: var(--ink);
+    font-family: inherit;
+    resize: vertical;
+    min-height: 110px;
+  }
+  .import-textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  .type-toggle { display: flex; gap: 8px; }
+  .type-btn {
+    flex: 1;
+    padding: 10px;
+    border-radius: 10px;
+    border: 1px solid var(--hairline);
+    background: var(--surface-2);
+    color: var(--ink-soft);
+    font-size: 13px;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  .type-btn.active { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+
+  .dup-warning {
+    font-size: 13px;
+    color: var(--over);
+    background: color-mix(in srgb, var(--over) 12%, transparent);
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin: 0 0 12px;
+    line-height: 1.4;
+  }
+
+  .entry-amount.refund { color: var(--good); }
+
+  .scan-row.scan-row-dup { background: color-mix(in srgb, var(--over) 8%, transparent); border-radius: 8px; }
+  .dup-note { font-size: 12px; color: var(--over); padding: 0 0 9px 28px; margin-top: -5px; }
+
+  /* ---- Hero ---- */
+  .hero { padding: 4px 20px 20px; border-bottom: 1px solid var(--hairline); }
+  .hero-amount {
+    font-family: 'Source Serif 4', Georgia, serif;
+    font-weight: 600;
+    font-size: 44px;
+    line-height: 1.05;
+    letter-spacing: -0.01em;
+    margin: 0;
+  }
+  .hero-sub { margin: 6px 0 0; font-size: 15px; font-weight: 500; }
+  .hero-sub.good { color: var(--good); }
+  .hero-sub.over { color: var(--over); }
+  .hero-sub.neutral { color: var(--ink-faint); }
+
+  /* ---- History ---- */
+  .history { padding: 8px 20px 60px; }
+  .day-group { margin-top: 22px; }
+  .day-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    padding-bottom: 8px; border-bottom: 1px solid var(--hairline); margin-bottom: 2px;
+  }
+  .day-name { font-size: 14px; font-weight: 500; color: var(--ink-soft); }
+  .day-diff {
+    font-family: 'IBM Plex Mono', monospace; font-size: 13px; font-weight: 500;
+    padding: 2px 8px; border-radius: 20px;
+  }
+  .day-diff.good { color: var(--good); background: color-mix(in srgb, var(--good) 14%, transparent); }
+  .day-diff.over { color: var(--over); background: color-mix(in srgb, var(--over) 14%, transparent); }
+
+  .entry-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--hairline); cursor: pointer; }
+  .entry-row:active { background: var(--surface); }
+  .entry-row:last-child { border-bottom: none; }
+  .entry-desc { flex: 1; font-size: 15px; min-width: 0; overflow-wrap: break-word; }
+  .entry-amount { font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-weight: 500; white-space: nowrap; }
+  .entry-del { background: none; border: none; padding: 4px; color: var(--ink-faint); opacity: 0.55; cursor: pointer; flex-shrink: 0; }
+  .entry-del:active { opacity: 1; }
+  .entry-del svg { width: 15px; height: 15px; display: block; }
+
+  .empty-state { margin-top: 40px; text-align: center; color: var(--ink-faint); font-size: 14px; line-height: 1.5; padding: 0 30px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header>
+    <p class="date-label" id="todayLabel">—</p>
+    <div class="header-actions">
+      <button class="icon-btn primary" id="openAdd" aria-label="Add expense">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+      <button class="icon-btn" id="openSettings" aria-label="Settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+          <circle cx="12" cy="12" r="3.2"/>
+          <path d="M4 12h2m12 0h2M12 4v2m0 12v2M6.3 6.3l1.4 1.4m8.6 8.6 1.4 1.4M17.7 6.3l-1.4 1.4M7.7 16.3l-1.4 1.4"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <section class="panel" id="panel" hidden></section>
+
+  <div class="hero">
+    <p class="hero-amount mono" id="heroAmount">0,00 kr</p>
+    <p class="hero-sub neutral" id="heroSub">Set your daily allowance to get started</p>
+  </div>
+
+  <div class="history" id="history"></div>
+</div>
+<input type="file" id="scanFile" accept="image/*" style="display:none;">
+
+<script>
+(function () {
+  var STORE_KEY = 'ledger.entries.v1';
+  var ALLOWANCE_KEY = 'ledger.allowance.v1';
+  var LAST_SAVED_KEY = 'ledger.lastSaved.v1';
+  var state = { entries: [], allowance: null };
+  var storageStatus = { ok: null, lastSaved: null };
+
+  function storageSelfTest() {
+    try {
+      var testKey = 'ledger.selftest.v1';
+      localStorage.setItem(testKey, 'x');
+      var ok = localStorage.getItem(testKey) === 'x';
+      localStorage.removeItem(testKey);
+      return ok;
+    } catch (e) { return false; }
+  }
+
+  function isStandalone() {
+    return (window.navigator && window.navigator.standalone === true) ||
+      (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+  }
+
+  function loadState() {
+    try {
+      var rawEntries = localStorage.getItem(STORE_KEY);
+      state.entries = rawEntries ? JSON.parse(rawEntries) : [];
+    } catch (e) { state.entries = []; }
+    try {
+      var rawAllowance = localStorage.getItem(ALLOWANCE_KEY);
+      state.allowance = rawAllowance !== null ? parseFloat(rawAllowance) : null;
+    } catch (e) { state.allowance = null; }
+    try {
+      var rawLastSaved = localStorage.getItem(LAST_SAVED_KEY);
+      storageStatus.lastSaved = rawLastSaved ? parseInt(rawLastSaved, 10) : null;
+    } catch (e) { storageStatus.lastSaved = null; }
+    storageStatus.ok = storageSelfTest();
+  }
+  function saveEntries() {
+    try {
+      localStorage.setItem(STORE_KEY, JSON.stringify(state.entries));
+      storageStatus.ok = true;
+      storageStatus.lastSaved = Date.now();
+      try { localStorage.setItem(LAST_SAVED_KEY, String(storageStatus.lastSaved)); } catch (e2) {}
+    } catch (e) { storageStatus.ok = false; }
+  }
+
+  function saveAllowance() {
+    try {
+      localStorage.setItem(ALLOWANCE_KEY, String(state.allowance));
+      storageStatus.ok = true;
+      storageStatus.lastSaved = Date.now();
+      try { localStorage.setItem(LAST_SAVED_KEY, String(storageStatus.lastSaved)); } catch (e2) {}
+    } catch (e) { storageStatus.ok = false; }
+  }
+
+  function dayKey(d) {
+    var y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), day = String(d.getDate()).padStart(2, '0');
+    return y + '-' + m + '-' + day;
+  }
+  function todayKey() { return dayKey(new Date()); }
+
+  function formatMoney(n) {
+    var sign = n < 0 ? '-' : '';
+    var abs = Math.abs(n).toLocaleString('sv-SE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return sign + abs + ' kr';
+  }
+
+  function dayLabel(key) {
+    var today = todayKey();
+    var d = new Date(key + 'T00:00:00');
+    var yest = new Date();
+    yest.setDate(yest.getDate() - 1);
+    if (key === today) return 'Today';
+    if (key === dayKey(yest)) return 'Yesterday';
+    return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+  }
+  function headerLabel() {
+    return new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+  }
+
+  function groupByDay() {
+    var groups = {};
+    state.entries.forEach(function (e) {
+      if (!groups[e.date]) groups[e.date] = [];
+      groups[e.date].push(e);
+    });
+    var keys = Object.keys(groups).sort().reverse();
+    return keys.map(function (k) {
+      var items = groups[k].slice().sort(function (a, b) { return b.ts - a.ts; });
+      var total = items.reduce(function (sum, e) { return sum + e.amount; }, 0);
+      return { date: k, items: items, total: total };
+    });
+  }
+
+  function render() {
+    document.getElementById('todayLabel').textContent = headerLabel();
+    var todaysTotal = state.entries.filter(function (e) { return e.date === todayKey(); })
+      .reduce(function (sum, e) { return sum + e.amount; }, 0);
+    document.getElementById('heroAmount').textContent = formatMoney(todaysTotal);
+
+    var sub = document.getElementById('heroSub');
+    if (state.allowance === null || isNaN(state.allowance)) {
+      sub.textContent = 'Set your daily allowance to get started';
+      sub.className = 'hero-sub neutral';
+    } else {
+      var diff = state.allowance - todaysTotal;
+      if (diff >= 0) {
+        sub.textContent = formatMoney(diff) + ' left of ' + formatMoney(state.allowance) + ' today';
+        sub.className = 'hero-sub good';
+      } else {
+        sub.textContent = formatMoney(Math.abs(diff)) + ' over your ' + formatMoney(state.allowance) + ' today';
+        sub.className = 'hero-sub over';
+      }
+    }
+
+    var history = document.getElementById('history');
+    history.innerHTML = '';
+    var groups = groupByDay();
+    if (groups.length === 0) {
+      var empty = document.createElement('div');
+      empty.className = 'empty-state';
+      empty.textContent = 'Nothing logged yet. Tap + to add your first expense.';
+      history.appendChild(empty);
+      return;
+    }
+    groups.forEach(function (g) {
+      var section = document.createElement('div');
+      section.className = 'day-group';
+      var head = document.createElement('div');
+      head.className = 'day-head';
+      var name = document.createElement('span');
+      name.className = 'day-name';
+      name.textContent = dayLabel(g.date);
+      head.appendChild(name);
+      if (state.allowance !== null && !isNaN(state.allowance)) {
+        var diff = document.createElement('span');
+        var d = state.allowance - g.total;
+        diff.className = 'day-diff ' + (d >= 0 ? 'good' : 'over');
+        diff.textContent = d >= 0 ? formatMoney(d) + ' left' : formatMoney(Math.abs(d)) + ' over';
+        head.appendChild(diff);
+      } else {
+        var tot = document.createElement('span');
+        tot.className = 'day-diff';
+        tot.style.color = 'var(--ink-soft)';
+        tot.textContent = formatMoney(g.total);
+        head.appendChild(tot);
+      }
+      section.appendChild(head);
+      g.items.forEach(function (e) {
+        var row = document.createElement('div');
+        row.className = 'entry-row';
+        row.addEventListener('click', function () { openAddPanel(e); });
+        var desc = document.createElement('span');
+        desc.className = 'entry-desc';
+        desc.textContent = e.description || '(no description)';
+        row.appendChild(desc);
+        var amt = document.createElement('span');
+        amt.className = 'entry-amount mono' + (e.amount < 0 ? ' refund' : '');
+        amt.textContent = formatMoney(e.amount);
+        row.appendChild(amt);
+        var del = document.createElement('button');
+        del.className = 'entry-del';
+        del.setAttribute('aria-label', 'Delete entry');
+        del.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m2 0-1 13a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1L6 7"/></svg>';
+        del.addEventListener('click', function (evt) { evt.stopPropagation(); deleteEntry(e.id); });
+        row.appendChild(del);
+        section.appendChild(row);
+      });
+      history.appendChild(section);
+    });
+  }
+
+  function deleteEntry(id) {
+    state.entries = state.entries.filter(function (e) { return e.id !== id; });
+    saveEntries();
+    render();
+  }
+
+  function findDuplicate(candidate, excludeId) {
+    return state.entries.find(function (e) {
+      if (excludeId && e.id === excludeId) return false;
+      return e.date === candidate.date &&
+        Math.abs(e.amount - candidate.amount) < 0.005 &&
+        (e.description || '').trim().toLowerCase() === (candidate.description || '').trim().toLowerCase();
+    });
+  }
+
+  function downloadCsv() {
+    var rows = state.entries.slice().sort(function (a, b) {
+      if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+      return a.ts - b.ts;
+    });
+    var lines = ['Date,Description,Amount (SEK)'];
+    rows.forEach(function (e) {
+      var desc = '"' + String(e.description || '').replace(/"/g, '""') + '"';
+      lines.push(e.date + ',' + desc + ',' + e.amount.toFixed(2));
+    });
+    var csv = lines.join('\r\n');
+    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'ledger-export-' + todayKey() + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+  }
+
+  // ---------------------------------------------------------------
+  // Panel: one section at the top of the page, in normal document
+  // flow (no fixed positioning), so it is always reachable and never
+  // fights with the surrounding scroll container.
+  // ---------------------------------------------------------------
+  var panel = document.getElementById('panel');
+  var scanFile = document.getElementById('scanFile');
+  var sampleFn = null;
+  var parsedRows = [];
+  var currentFlow = null;
+
+  function showPanel() {
+    panel.hidden = false;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  function closePanel() {
+    panel.hidden = true;
+    panel.innerHTML = '';
+  }
+
+  function openAddPanel(existingEntry) {
+    var isEdit = !!existingEntry;
+    var initialType = isEdit && existingEntry.amount < 0 ? 'refund' : 'expense';
+    var initialAmount = isEdit ? Math.abs(existingEntry.amount).toFixed(2).replace('.', ',') : '';
+    var initialDesc = isEdit ? existingEntry.description : '';
+    var initialDate = isEdit ? existingEntry.date : todayKey();
+
+    panel.innerHTML =
+      '<h2>' + (isEdit ? 'Edit expense' : 'Log an expense') + '</h2>' +
+      '<div class="field"><label for="amountInput">Amount</label>' +
+      '<input type="text" inputmode="decimal" id="amountInput" class="mono-input" placeholder="0,00" autocomplete="off" value="' + initialAmount + '"></div>' +
+      '<div class="field"><label>Type</label>' +
+      '<div class="type-toggle">' +
+      '<button type="button" class="type-btn' + (initialType === 'expense' ? ' active' : '') + '" id="typeExpense" data-type="expense">Expense</button>' +
+      '<button type="button" class="type-btn' + (initialType === 'refund' ? ' active' : '') + '" id="typeRefund" data-type="refund">Refund (money back)</button>' +
+      '</div></div>' +
+      '<div class="field"><label for="descInput">What was it?</label>' +
+      '<input type="text" id="descInput" placeholder="Coffee, bus fare, groceries…" autocomplete="off" value="' + initialDesc.replace(/"/g, '&quot;') + '"></div>' +
+      '<div class="field"><label for="dateInput">Date</label>' +
+      '<input type="date" id="dateInput" value="' + initialDate + '"></div>' +
+      '<div id="dupWarning"></div>' +
+      '<div class="panel-actions" id="addActions">' +
+      '<button class="btn btn-secondary" id="cancelAdd">Cancel</button>' +
+      '<button class="btn btn-primary" id="saveAdd">' + (isEdit ? 'Save changes' : 'Save') + '</button>' +
+      '</div>' +
+      (isEdit
+        ? '<button class="scan-link" id="deleteEntryBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m2 0-1 13a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1L6 7"/></svg>Delete this entry</button>'
+        : '<button class="scan-link" id="openScan" style="display:' + (sampleFn ? 'flex' : 'none') + ';">' +
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 8V6a2 2 0 0 1 2-2h2M4 16v2a2 2 0 0 0 2 2h2M20 8V6a2 2 0 0 0-2-2h-2M20 16v2a2 2 0 0 1-2 2h-2"/><circle cx="12" cy="12" r="3.2"/></svg>' +
+          'Scan a bank screenshot instead</button>' +
+          '<button class="scan-link" id="openImport">' +
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 12h6m-6 4h6M8 4h5l4 4v12a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z"/></svg>' +
+          'Paste expenses instead</button>');
+    showPanel();
+    setTimeout(function () { document.getElementById('amountInput').focus(); }, 50);
+
+    var entryType = initialType;
+    document.getElementById('typeExpense').addEventListener('click', function () {
+      entryType = 'expense';
+      this.classList.add('active');
+      document.getElementById('typeRefund').classList.remove('active');
+    });
+    document.getElementById('typeRefund').addEventListener('click', function () {
+      entryType = 'refund';
+      this.classList.add('active');
+      document.getElementById('typeExpense').classList.remove('active');
+    });
+
+    document.getElementById('cancelAdd').addEventListener('click', closePanel);
+
+    function commitEntry(amount, desc, date) {
+      if (isEdit) {
+        existingEntry.amount = amount;
+        existingEntry.description = desc;
+        existingEntry.date = date;
+      } else {
+        state.entries.push({
+          id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+          date: date, amount: amount, description: desc, ts: Date.now()
+        });
+      }
+      saveEntries();
+      render();
+      closePanel();
+    }
+
+    document.getElementById('saveAdd').addEventListener('click', function () {
+      var raw = document.getElementById('amountInput').value.replace(',', '.').replace('-', '');
+      var magnitude = parseFloat(raw);
+      var desc = document.getElementById('descInput').value.trim();
+      var date = document.getElementById('dateInput').value;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) date = todayKey();
+      if (isNaN(magnitude) || magnitude === 0) { document.getElementById('amountInput').focus(); return; }
+      var amount = Math.round(magnitude * 100) / 100 * (entryType === 'refund' ? -1 : 1);
+
+      var dup = findDuplicate({ date: date, amount: amount, description: desc }, isEdit ? existingEntry.id : null);
+      if (dup) {
+        document.getElementById('dupWarning').innerHTML =
+          '<p class="dup-warning">You already logged ' + formatMoney(dup.amount) + ' for \u201c' + (dup.description || '(no description)') + '\u201d on that day. Save anyway?</p>';
+        document.getElementById('addActions').innerHTML =
+          '<button class="btn btn-secondary" id="rejectDup">Don\u2019t save</button>' +
+          '<button class="btn btn-primary" id="acceptDup">Save anyway</button>';
+        document.getElementById('rejectDup').addEventListener('click', closePanel);
+        document.getElementById('acceptDup').addEventListener('click', function () { commitEntry(amount, desc, date); });
+        return;
+      }
+      commitEntry(amount, desc, date);
+    });
+
+    if (isEdit) {
+      document.getElementById('deleteEntryBtn').addEventListener('click', function () {
+        deleteEntry(existingEntry.id);
+        closePanel();
+      });
+    } else {
+      document.getElementById('openScan').addEventListener('click', openScanPanel);
+      document.getElementById('openImport').addEventListener('click', openImportPanel);
+    }
+  }
+
+  function formatTimestamp(ms) {
+    if (!ms) return 'never';
+    var d = new Date(ms);
+    var now = new Date();
+    var sameDay = d.toDateString() === now.toDateString();
+    var timeStr = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    return sameDay ? 'today at ' + timeStr : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' at ' + timeStr;
+  }
+
+  function diagnosticsMarkup() {
+    var okLine = storageStatus.ok
+      ? '<span style="color:var(--good);">Working \u2014 entries are saving to this device.</span>'
+      : '<span style="color:var(--over);">Not working \u2014 entries will NOT survive closing the app. This browsing context may not allow persistent storage.</span>';
+    return '<div class="diag-block">' +
+      '<p class="hint" style="margin-bottom:6px;"><strong>Local storage:</strong> ' + okLine + '</p>' +
+      '<p class="hint" style="margin-bottom:6px;">' + state.entries.length + ' ' + (state.entries.length === 1 ? 'entry' : 'entries') + ' \u00b7 last saved ' + formatTimestamp(storageStatus.lastSaved) + '</p>' +
+      '<p class="hint" style="margin-bottom:0;">Running as: ' + (isStandalone() ? 'standalone app (Home Screen)' : 'browser tab') + '</p>' +
+      '</div>' +
+      '<button class="btn btn-secondary" id="exportCsvBtn" style="width:100%;margin-top:12px;">Export all entries as CSV</button>';
+  }
+
+  function openSettingsPanel() {
+    var val = state.allowance !== null && !isNaN(state.allowance) ? state.allowance : '';
+    panel.innerHTML =
+      '<h2>Daily allowance</h2>' +
+      '<div class="field"><label for="allowanceInput">Amount per day</label>' +
+      '<input type="text" inputmode="decimal" id="allowanceInput" class="mono-input" placeholder="250" autocomplete="off" value="' + val + '">' +
+      '<p class="hint">Each day\u2019s total is checked against this. Under is green, over is red.</p></div>' +
+      '<div class="panel-actions">' +
+      '<button class="btn btn-secondary" id="cancelSettings">Cancel</button>' +
+      '<button class="btn btn-primary" id="saveSettings">Save</button>' +
+      '</div>' +
+      '<div class="diag-divider"></div>' +
+      diagnosticsMarkup();
+    showPanel();
+    setTimeout(function () { document.getElementById('allowanceInput').focus(); }, 50);
+
+    document.getElementById('cancelSettings').addEventListener('click', closePanel);
+    document.getElementById('saveSettings').addEventListener('click', function () {
+      var raw = document.getElementById('allowanceInput').value.replace(',', '.');
+      var v = parseFloat(raw);
+      if (isNaN(v) || v < 0) { document.getElementById('allowanceInput').focus(); return; }
+      state.allowance = Math.round(v * 100) / 100;
+      saveAllowance();
+      closePanel();
+      render();
+    });
+    document.getElementById('exportCsvBtn').addEventListener('click', downloadCsv);
+  }
+
+  function scanIntroMarkup() {
+    return '<p class="scan-intro">Pick a screenshot of your bank app\u2019s transaction list. Claude reads the amounts and descriptions so you can check them before they\u2019re added.</p>' +
+      '<div class="scan-upload" id="scanUploadTrigger">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 16V4m0 0-4 4m4-4 4 4M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>' +
+      'Choose a screenshot</div>';
+  }
+
+  function importIntroMarkup() {
+    return '<p class="scan-intro">Paste a table or list of expenses \u2014 like one I\u2019ve given you here in Claude, or copied from a spreadsheet. Each line needs an amount; a date and description help too.</p>' +
+      '<textarea id="importText" class="import-textarea" placeholder="Paste here\u2026"></textarea>' +
+      '<button class="btn btn-primary" id="parseImportBtn" style="width:100%;margin-top:10px;">Parse</button>';
+  }
+
+  function reviewShellHtml(title, bodyHtml) {
+    return '<h2 id="scanTitle">' + title + '</h2><div id="scanBody">' + bodyHtml + '</div>' +
+      '<div class="panel-actions" id="scanActions" style="display:none;">' +
+      '<button class="btn btn-secondary" id="cancelScan">Cancel</button>' +
+      '<button class="btn btn-primary" id="saveScan">Add expenses</button></div>';
+  }
+
+  function bindReviewActions() {
+    document.getElementById('cancelScan').addEventListener('click', closePanel);
+    document.getElementById('saveScan').addEventListener('click', function () {
+      parsedRows.forEach(function (row) {
+        if (!row.include) return;
+        state.entries.push({
+          id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+          date: row.date, amount: row.amount, description: row.description, ts: Date.now()
+        });
+      });
+      saveEntries();
+      render();
+      closePanel();
+    });
+  }
+
+  function openScanPanel() {
+    parsedRows = [];
+    currentFlow = 'scan';
+    panel.innerHTML = reviewShellHtml('Scan a bank screenshot', scanIntroMarkup());
+    showPanel();
+    bindScanUpload();
+    bindReviewActions();
+  }
+
+  function openImportPanel() {
+    parsedRows = [];
+    currentFlow = 'import';
+    panel.innerHTML = reviewShellHtml('Paste expenses', importIntroMarkup());
+    showPanel();
+    bindImportParse();
+    bindReviewActions();
+    setTimeout(function () { document.getElementById('importText').focus(); }, 50);
+  }
+
+  function bindImportParse() {
+    document.getElementById('parseImportBtn').addEventListener('click', function () {
+      var text = document.getElementById('importText').value;
+      var rows = parseImportText(text);
+      parsedRows = rows.map(function (r) { return { amount: r.amount, description: r.description, date: r.date, include: true }; });
+      flagDuplicates();
+      renderParsedRows();
+    });
+  }
+
+  function parseAmount(str) {
+    if (!str) return null;
+    var s = String(str).replace(/kr/ig, '').trim().replace(/\s/g, '').replace(',', '.');
+    if (!/^-?\d+(\.\d+)?$/.test(s)) return null;
+    var v = parseFloat(s);
+    return isNaN(v) ? null : v;
+  }
+
+  function extractDate(str) {
+    if (!str) return null;
+    var m = String(str).match(/(\d{4})-(\d{2})-(\d{2})/);
+    return m ? m[0] : null;
+  }
+
+  function parseImportText(text) {
+    var lines = String(text || '').split('\n');
+    var headerMap = null, sawHeader = false;
+    var rows = [];
+    lines.forEach(function (raw) {
+      var line = raw.trim();
+      if (!line) return;
+      if (/^[\-\s|:]+$/.test(line) && line.indexOf('-') !== -1) return; // markdown separator row
+
+      var cells;
+      if (line.indexOf('|') !== -1) {
+        cells = line.split('|').map(function (c) { return c.trim(); });
+        if (cells.length && cells[0] === '') cells.shift();
+        if (cells.length && cells[cells.length - 1] === '') cells.pop();
+      } else if (line.indexOf('\t') !== -1) {
+        cells = line.split('\t').map(function (c) { return c.trim(); });
+      } else {
+        cells = line.split(/\s{2,}/).map(function (c) { return c.trim(); });
+      }
+      cells = cells.map(function (c) { return c.replace(/\*\*/g, '').trim(); });
+      if (!cells.length || (cells.length === 1 && !cells[0])) return;
+
+      var joined = cells.join(' ').toLowerCase();
+      if (joined.indexOf('total') !== -1 && cells.length <= 2) return;
+
+      var lowerCells = cells.map(function (c) { return c.toLowerCase(); });
+      var looksHeader = lowerCells.some(function (c) {
+        return c === 'amount' || c === 'merchant' || c === 'description' || c === 'date' || c === 'time' || c === 'status';
+      });
+      if (!sawHeader && looksHeader) {
+        headerMap = {};
+        lowerCells.forEach(function (c, i) {
+          if (c === 'amount') headerMap.amount = i;
+          else if (c === 'merchant' || c === 'description') headerMap.description = i;
+          else if (c === 'date') headerMap.date = i;
+        });
+        sawHeader = true;
+        return;
+      }
+
+      var amount = null, description = null, date = null;
+      if (headerMap && headerMap.amount !== undefined) {
+        amount = parseAmount(cells[headerMap.amount]);
+        description = headerMap.description !== undefined ? cells[headerMap.description] : null;
+        date = headerMap.date !== undefined ? extractDate(cells[headerMap.date]) : null;
+      }
+      if (amount === null) {
+        for (var i = cells.length - 1; i >= 0; i--) {
+          var a = parseAmount(cells[i]);
+          if (a !== null) { amount = a; break; }
+        }
+      }
+      if (description === null) description = cells[0];
+      if (date === null) {
+        for (var j = 0; j < cells.length; j++) {
+          var d = extractDate(cells[j]);
+          if (d) { date = d; break; }
+        }
+      }
+      if (amount === null || amount === 0) return;
+
+      rows.push({
+        amount: Math.round(amount * 100) / 100,
+        description: (description || '').trim() || '(no description)',
+        date: date || todayKey()
+      });
+    });
+    return rows;
+  }
+
+  function flagDuplicates() {
+    parsedRows.forEach(function (row) {
+      var dup = findDuplicate({ date: row.date, amount: row.amount, description: row.description });
+      row.duplicate = !!dup;
+      if (row.duplicate) row.include = false;
+    });
+  }
+
+  function bindScanUpload() {
+    var trigger = document.getElementById('scanUploadTrigger');
+    if (trigger) trigger.addEventListener('click', function () { scanFile.click(); });
+  }
+
+  function showScanStatus(text) {
+    document.getElementById('scanBody').innerHTML = '<p class="scan-status">' + text + '</p>';
+    document.getElementById('scanActions').style.display = 'none';
+  }
+  function showScanError(text) {
+    var intro = currentFlow === 'import' ? importIntroMarkup() : scanIntroMarkup();
+    document.getElementById('scanBody').innerHTML = '<p class="scan-error">' + text + '</p>' + intro;
+    document.getElementById('scanActions').style.display = 'none';
+    if (currentFlow === 'import') {
+      bindImportParse();
+      setTimeout(function () { var el = document.getElementById('importText'); if (el) el.focus(); }, 50);
+    } else {
+      bindScanUpload();
+    }
+  }
+
+  function renderParsedRows() {
+    var dupCount = parsedRows.filter(function (r) { return r.duplicate; }).length;
+    document.getElementById('scanTitle').textContent = parsedRows.length + (parsedRows.length === 1 ? ' expense found' : ' expenses found') +
+      (dupCount ? ' (' + dupCount + ' possible duplicate' + (dupCount === 1 ? '' : 's') + ')' : '');
+    if (parsedRows.length === 0) {
+      var emptyMsg = currentFlow === 'import'
+        ? 'No expenses were found in that text. Check it has an amount on each line, or add manually.'
+        : 'No expenses were found in that screenshot. Try a clearer photo, or add it manually.';
+      showScanError(emptyMsg);
+      return;
+    }
+    var html = '<div class="scan-rows">';
+    parsedRows.forEach(function (row, i) {
+      html += '<div class="scan-row' + (row.duplicate ? ' scan-row-dup' : '') + '">' +
+        '<input type="checkbox" data-idx="' + i + '" class="scan-check" ' + (row.include ? 'checked' : '') + '>' +
+        '<input type="text" class="scan-desc" data-idx="' + i + '" value="' + row.description.replace(/"/g, '&quot;') + '">' +
+        '<input type="text" inputmode="decimal" class="scan-amt mono" data-idx="' + i + '" value="' + row.amount.toFixed(2).replace('.', ',') + '">' +
+        '</div>';
+      if (row.duplicate) {
+        html += '<div class="dup-note">Looks already logged \u2014 check the box to add anyway</div>';
+      }
+    });
+    html += '</div>';
+    var body = document.getElementById('scanBody');
+    body.innerHTML = html;
+    document.getElementById('scanActions').style.display = 'flex';
+    body.querySelectorAll('.scan-check').forEach(function (el) {
+      el.addEventListener('change', function () { parsedRows[+el.dataset.idx].include = el.checked; });
+    });
+    body.querySelectorAll('.scan-desc').forEach(function (el) {
+      el.addEventListener('input', function () { parsedRows[+el.dataset.idx].description = el.value; });
+    });
+    body.querySelectorAll('.scan-amt').forEach(function (el) {
+      el.addEventListener('input', function () {
+        var v = parseFloat(el.value.replace(',', '.'));
+        parsedRows[+el.dataset.idx].amount = isNaN(v) ? 0 : v;
+      });
+    });
+  }
+
+  function errorCopy(code) {
+    switch (code) {
+      case 'image_rejected': return 'That image couldn\u2019t be read \u2014 try a clearer or smaller screenshot.';
+      case 'rate_limited': return 'Too many requests right now \u2014 try again in a bit.';
+      case 'invalid_json':
+      case 'empty_completion':
+      case 'refused': return 'Couldn\u2019t make sense of that screenshot. Try a clearer photo, or add the expense manually.';
+      case 'session_expired': return 'You\u2019ll need to sign in again to use this.';
+      case 'cancelled': return '';
+      default: return 'Something went wrong reading that screenshot. Please try again.';
+    }
+  }
+
+  async function handleScanFile(file) {
+    if (!file) return;
+    showScanStatus('Reading screenshot\u2026');
+    var prompt = 'This image is a screenshot of a bank or payments app showing a list of transactions, in Swedish kronor (SEK). ' +
+      'Extract every purchase AND refund/return (ignore salary, transfers-in, and top-ups). ' +
+      'Reply with ONLY a JSON array, one object per transaction: {"amount": number (in SEK, no currency symbol; POSITIVE for a purchase, NEGATIVE for a refund or money returned), ' +
+      '"description": string (short merchant or purpose, as shown), "date": string in YYYY-MM-DD format if a date is visible for that transaction, otherwise null}. ' +
+      'If nothing qualifies, reply with an empty array [].';
+    try {
+      var result = await sampleFn.json(prompt, { images: file, modelTier: 'default' });
+      if (!Array.isArray(result)) result = [];
+      parsedRows = result
+        .filter(function (r) { return r && typeof r.amount === 'number' && r.amount !== 0; })
+        .map(function (r) {
+          var d = (typeof r.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(r.date)) ? r.date : todayKey();
+          return {
+            amount: Math.round(r.amount * 100) / 100,
+            description: typeof r.description === 'string' && r.description.trim() ? r.description.trim() : '(no description)',
+            date: d, include: true
+          };
+        });
+      flagDuplicates();
+      renderParsedRows();
+    } catch (e) {
+      var msg = errorCopy(e && e.code);
+      if (msg) showScanError(msg); else closePanel();
+    }
+  }
+
+  scanFile.addEventListener('change', function () {
+    var file = scanFile.files && scanFile.files[0];
+    handleScanFile(file);
+    scanFile.value = '';
+  });
+
+  document.getElementById('openAdd').addEventListener('click', function () { openAddPanel(); });
+  document.getElementById('openSettings').addEventListener('click', openSettingsPanel);
+
+  async function initScanning() {
+    try {
+      var claudeHost = window.claude;
+      if (!claudeHost || typeof claudeHost.use !== 'function') return;
+      var s = await claudeHost.use('sample');
+      if (!s) return;
+      var limits = await s.limits().catch(function () { return null; });
+      if (!limits || !limits.images) return;
+      sampleFn = s;
+      var existingLink = document.getElementById('openScan');
+      if (existingLink) existingLink.style.display = 'flex';
+    } catch (e) { /* scanning stays hidden */ }
+  }
+
+  // --- init ---
+  loadState();
+  render();
+  if (state.allowance === null || isNaN(state.allowance)) {
+    setTimeout(openSettingsPanel, 300);
+  }
+  initScanning();
+})();
+</script>
+</body>
+</html>
