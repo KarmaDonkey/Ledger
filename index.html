@@ -270,6 +270,47 @@
   .entry-del svg { width: 15px; height: 15px; display: block; }
 
   .empty-state { margin-top: 40px; text-align: center; color: var(--ink-faint); font-size: 14px; line-height: 1.5; padding: 0 30px; }
+
+  /* ---- Analysis ---- */
+  .analysis { padding: 8px 20px 60px; }
+  .period-nav { display: flex; align-items: center; justify-content: space-between; margin: 14px 0 4px; }
+  .period-nav .icon-btn { padding: 6px 10px; font-size: 20px; line-height: 1; }
+  .period-label { font-size: 14px; font-weight: 500; color: var(--ink-soft); text-align: center; flex: 1; }
+
+  .cat-breakdown { margin-top: 6px; }
+  .cat-row { padding: 12px 0; border-bottom: 1px solid var(--hairline); cursor: pointer; }
+  .cat-row:last-child { border-bottom: none; }
+  .cat-row-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; gap: 10px; }
+  .cat-name { font-size: 15px; }
+  .cat-amt { font-family: 'IBM Plex Mono', monospace; font-size: 14px; font-weight: 500; white-space: nowrap; }
+  .cat-bar { height: 6px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+  .cat-bar-fill { height: 100%; background: var(--accent); border-radius: 4px; }
+
+  .cat-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .cat-chip {
+    padding: 8px 12px; border-radius: 20px; border: 1px solid var(--hairline);
+    background: var(--surface-2); color: var(--ink-soft); font-size: 13px; font-family: inherit; cursor: pointer;
+  }
+  .cat-chip.active { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+
+  .cat-manage-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .cat-manage-input {
+    flex: 1; background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 8px;
+    padding: 9px 10px; font-size: 14px; color: var(--ink); font-family: inherit;
+  }
+  .cat-manage-del { background: none; border: none; color: var(--ink-faint); font-size: 20px; line-height: 1; padding: 4px 8px; cursor: pointer; }
+  .cat-add-row { display: flex; gap: 8px; margin-top: 4px; }
+  .cat-add-row input {
+    flex: 1; background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 8px;
+    padding: 9px 10px; font-size: 14px; color: var(--ink); font-family: inherit;
+  }
+
+  .scan-row-cat { padding: 0 0 9px 28px; margin-top: -5px; }
+  .scan-row-cat select {
+    width: 100%; background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 8px;
+    padding: 6px 8px; font-size: 13px; color: var(--ink); font-family: inherit;
+  }
+  .version-line { font-size: 12px; color: var(--ink-faint); text-align: center; margin: 18px 0 0; }
 </style>
 </head>
 <body>
@@ -278,6 +319,9 @@
   <header>
     <p class="date-label" id="todayLabel">—</p>
     <div class="header-actions">
+      <button class="icon-btn" id="openAnalysis" aria-label="Analysis">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 19V5m5 14V9m5 10V13m5 6V7"/></svg>
+      </button>
       <button class="icon-btn primary" id="openAdd" aria-label="Add expense">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
       </button>
@@ -292,12 +336,16 @@
 
   <section class="panel" id="panel" hidden></section>
 
-  <div class="hero">
-    <p class="hero-amount mono" id="heroAmount">0,00 kr</p>
-    <p class="hero-sub neutral" id="heroSub">Set your daily allowance to get started</p>
+  <div id="historyView">
+    <div class="hero">
+      <p class="hero-amount mono" id="heroAmount">0,00 kr</p>
+      <p class="hero-sub neutral" id="heroSub">Set your daily allowance to get started</p>
+    </div>
+
+    <div class="history" id="history"></div>
   </div>
 
-  <div class="history" id="history"></div>
+  <div class="analysis" id="analysisView" hidden></div>
 </div>
 <input type="file" id="scanFile" accept="image/*" style="display:none;">
 
@@ -306,8 +354,14 @@
   var STORE_KEY = 'ledger.entries.v1';
   var ALLOWANCE_KEY = 'ledger.allowance.v1';
   var LAST_SAVED_KEY = 'ledger.lastSaved.v1';
-  var state = { entries: [], allowance: null };
+  var CATEGORIES_KEY = 'ledger.categories.v1';
+  var MONTH_START_KEY = 'ledger.monthStartDay.v1';
+  var DEFAULT_CATEGORIES = ['Mat', 'Transport', 'Nöje', 'Räkningar', 'Övrigt'];
+  var UNCATEGORIZED = 'Okategoriserad';
+  var APP_VERSION = '1.1';
+  var state = { entries: [], allowance: null, categories: [], monthStartDay: 1, view: 'history' };
   var storageStatus = { ok: null, lastSaved: null };
+  var analysisState = { periodType: 'month', anchor: new Date(), mode: 'total', drillCategory: null };
 
   function storageSelfTest() {
     try {
@@ -337,6 +391,15 @@
       var rawLastSaved = localStorage.getItem(LAST_SAVED_KEY);
       storageStatus.lastSaved = rawLastSaved ? parseInt(rawLastSaved, 10) : null;
     } catch (e) { storageStatus.lastSaved = null; }
+    try {
+      var rawCats = localStorage.getItem(CATEGORIES_KEY);
+      state.categories = rawCats ? JSON.parse(rawCats) : DEFAULT_CATEGORIES.slice();
+    } catch (e) { state.categories = DEFAULT_CATEGORIES.slice(); }
+    try {
+      var rawStart = localStorage.getItem(MONTH_START_KEY);
+      state.monthStartDay = rawStart !== null ? parseInt(rawStart, 10) : 1;
+      if (isNaN(state.monthStartDay) || state.monthStartDay < 1 || state.monthStartDay > 31) state.monthStartDay = 1;
+    } catch (e) { state.monthStartDay = 1; }
     storageStatus.ok = storageSelfTest();
   }
   function saveEntries() {
@@ -351,6 +414,24 @@
   function saveAllowance() {
     try {
       localStorage.setItem(ALLOWANCE_KEY, String(state.allowance));
+      storageStatus.ok = true;
+      storageStatus.lastSaved = Date.now();
+      try { localStorage.setItem(LAST_SAVED_KEY, String(storageStatus.lastSaved)); } catch (e2) {}
+    } catch (e) { storageStatus.ok = false; }
+  }
+
+  function saveCategories() {
+    try {
+      localStorage.setItem(CATEGORIES_KEY, JSON.stringify(state.categories));
+      storageStatus.ok = true;
+      storageStatus.lastSaved = Date.now();
+      try { localStorage.setItem(LAST_SAVED_KEY, String(storageStatus.lastSaved)); } catch (e2) {}
+    } catch (e) { storageStatus.ok = false; }
+  }
+
+  function saveMonthStartDay() {
+    try {
+      localStorage.setItem(MONTH_START_KEY, String(state.monthStartDay));
       storageStatus.ok = true;
       storageStatus.lastSaved = Date.now();
       try { localStorage.setItem(LAST_SAVED_KEY, String(storageStatus.lastSaved)); } catch (e2) {}
@@ -396,7 +477,234 @@
     });
   }
 
+  // ---------------------------------------------------------------
+  // Analysis: day/month/year totals with a custom month start day,
+  // total-vs-average toggle, and a per-category breakdown with
+  // drill-down into that category's transactions.
+  // ---------------------------------------------------------------
+  function daysInMonth(year, monthIndex0) { return new Date(year, monthIndex0 + 1, 0).getDate(); }
+
+  function periodStartForMonth(year, monthIndex0, startDay) {
+    var d = Math.min(startDay, daysInMonth(year, monthIndex0));
+    return new Date(year, monthIndex0, d);
+  }
+
+  function addMonthsClamped(year, monthIndex0, delta, startDay) {
+    var total = monthIndex0 + delta;
+    var y = year + Math.floor(total / 12);
+    var m = ((total % 12) + 12) % 12;
+    return periodStartForMonth(y, m, startDay);
+  }
+
+  function getMonthPeriod(anchor, startDay) {
+    var y = anchor.getFullYear(), m = anchor.getMonth();
+    var thisStart = periodStartForMonth(y, m, startDay);
+    var start, end;
+    if (anchor.getTime() >= thisStart.getTime()) {
+      start = thisStart;
+      end = new Date(addMonthsClamped(y, m, 1, startDay).getTime() - 86400000);
+    } else {
+      start = addMonthsClamped(y, m, -1, startDay);
+      end = new Date(thisStart.getTime() - 86400000);
+    }
+    return { start: start, end: end };
+  }
+
+  function getYearPeriod(anchor) {
+    var y = anchor.getFullYear();
+    return { start: new Date(y, 0, 1), end: new Date(y, 11, 31) };
+  }
+
+  function getPeriod(type, anchor, startDay) {
+    if (type === 'day') return { start: anchor, end: anchor };
+    if (type === 'year') return getYearPeriod(anchor);
+    return getMonthPeriod(anchor, startDay);
+  }
+
+  function shiftPeriod(period, type, startDay, dir) {
+    if (type === 'day') {
+      var d = new Date(period.start); d.setDate(d.getDate() + dir); return d;
+    }
+    if (type === 'year') {
+      var y = new Date(period.start); y.setFullYear(y.getFullYear() + dir); return y;
+    }
+    if (dir < 0) {
+      var p = new Date(period.start); p.setDate(p.getDate() - 1); return p;
+    }
+    var p2 = new Date(period.end); p2.setDate(p2.getDate() + 1); return p2;
+  }
+
+  function formatPeriodLabel(type, period) {
+    if (type === 'day') {
+      return period.start.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+    }
+    if (type === 'year') {
+      return String(period.start.getFullYear());
+    }
+    var sameMonth = period.start.getMonth() === period.end.getMonth() && period.start.getFullYear() === period.end.getFullYear();
+    if (sameMonth) {
+      return period.start.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+    }
+    return period.start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) +
+      ' – ' + period.end.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+
+  function entriesInPeriod(period) {
+    var sk = dayKey(period.start), ek = dayKey(period.end);
+    return state.entries.filter(function (e) { return e.date >= sk && e.date <= ek; });
+  }
+
+  function periodTotal(items) { return items.reduce(function (sum, e) { return sum + e.amount; }, 0); }
+
+  function categoryBreakdown(items) {
+    var map = {};
+    items.forEach(function (e) {
+      var cat = e.category || UNCATEGORIZED;
+      map[cat] = (map[cat] || 0) + e.amount;
+    });
+    return Object.keys(map).map(function (c) { return { category: c, total: map[c] }; })
+      .sort(function (a, b) { return b.total - a.total; });
+  }
+
+  function renderAnalysis() {
+    var view = document.getElementById('analysisView');
+    var type = analysisState.periodType;
+    var period = getPeriod(type, analysisState.anchor, state.monthStartDay);
+    var items = entriesInPeriod(period);
+    var total = periodTotal(items);
+    var days = Math.round((period.end - period.start) / 86400000) + 1;
+    var mode = type === 'day' ? 'total' : analysisState.mode;
+    var displayValue = mode === 'average' ? total / days : total;
+    var hasAllowance = state.allowance !== null && !isNaN(state.allowance);
+
+    var html = '';
+    html += '<div class="type-toggle" id="periodTypeToggle">' +
+      ['day', 'month', 'year'].map(function (t) {
+        var lbl = t === 'day' ? 'Day' : t === 'month' ? 'Month' : 'Year';
+        return '<button type="button" class="type-btn' + (t === type ? ' active' : '') + '" data-type="' + t + '">' + lbl + '</button>';
+      }).join('') + '</div>';
+
+    html += '<div class="period-nav">' +
+      '<button type="button" class="icon-btn" id="periodPrev" aria-label="Previous period">‹</button>' +
+      '<span class="period-label">' + formatPeriodLabel(type, period) + '</span>' +
+      '<button type="button" class="icon-btn" id="periodNext" aria-label="Next period">›</button>' +
+      '</div>';
+
+    html += '<div class="hero" style="padding:8px 0 14px;border-bottom:none;">' +
+      '<p class="hero-amount mono">' + formatMoney(displayValue) + '</p>';
+    if (hasAllowance) {
+      var budget = mode === 'average' ? state.allowance : state.allowance * days;
+      var diff = budget - displayValue;
+      html += '<p class="hero-sub ' + (diff >= 0 ? 'good' : 'over') + '">' +
+        (diff >= 0
+          ? formatMoney(diff) + ' left of ' + formatMoney(budget)
+          : formatMoney(Math.abs(diff)) + ' over ' + formatMoney(budget)) +
+        (mode === 'average' ? ' per day' : '') + '</p>';
+    }
+    html += '</div>';
+
+    if (type !== 'day') {
+      html += '<div class="type-toggle" id="modeToggle" style="margin-bottom:16px;">' +
+        '<button type="button" class="type-btn' + (mode === 'total' ? ' active' : '') + '" data-mode="total">Total</button>' +
+        '<button type="button" class="type-btn' + (mode === 'average' ? ' active' : '') + '" data-mode="average">Avg / day</button>' +
+        '</div>';
+    }
+
+    if (analysisState.drillCategory) {
+      var catItems = items.filter(function (e) { return (e.category || UNCATEGORIZED) === analysisState.drillCategory; })
+        .sort(function (a, b) { return b.ts - a.ts; });
+      html += '<button type="button" class="scan-link" id="backToBreakdown" style="justify-content:flex-start;padding-left:0;">‹ Back</button>';
+      html += '<h2 style="font-size:16px;margin:6px 0 10px;">' + analysisState.drillCategory + '</h2>';
+      if (catItems.length === 0) {
+        html += '<p class="hint">No transactions.</p>';
+      } else {
+        catItems.forEach(function (e) {
+          html += '<div class="entry-row" data-id="' + e.id + '">' +
+            '<span class="entry-desc">' + (e.description || '(no description)') + '</span>' +
+            '<span class="entry-amount mono' + (e.amount < 0 ? ' refund' : '') + '">' + formatMoney(e.amount) + '</span>' +
+            '</div>';
+        });
+      }
+    } else {
+      var breakdown = categoryBreakdown(items);
+      if (breakdown.length === 0) {
+        html += '<p class="hint" style="margin-top:20px;">Nothing logged in this period.</p>';
+      } else {
+        var basis = breakdown.reduce(function (s, b) { return s + Math.abs(b.total); }, 0) || 1;
+        html += '<div class="cat-breakdown">';
+        breakdown.forEach(function (b) {
+          var pct = Math.round(Math.abs(b.total) / basis * 100);
+          html += '<div class="cat-row" data-cat="' + b.category.replace(/"/g, '&quot;') + '">' +
+            '<div class="cat-row-top"><span class="cat-name">' + b.category + '</span><span class="cat-amt">' + formatMoney(b.total) + '</span></div>' +
+            '<div class="cat-bar"><div class="cat-bar-fill" style="width:' + pct + '%"></div></div>' +
+            '</div>';
+        });
+        html += '</div>';
+      }
+    }
+
+    view.innerHTML = html;
+    bindAnalysisEvents();
+  }
+
+  function bindAnalysisEvents() {
+    document.querySelectorAll('#periodTypeToggle .type-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        analysisState.periodType = btn.dataset.type;
+        analysisState.drillCategory = null;
+        renderAnalysis();
+      });
+    });
+    var modeToggle = document.getElementById('modeToggle');
+    if (modeToggle) {
+      modeToggle.querySelectorAll('.type-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          analysisState.mode = btn.dataset.mode;
+          renderAnalysis();
+        });
+      });
+    }
+    document.getElementById('periodPrev').addEventListener('click', function () {
+      var period = getPeriod(analysisState.periodType, analysisState.anchor, state.monthStartDay);
+      analysisState.anchor = shiftPeriod(period, analysisState.periodType, state.monthStartDay, -1);
+      analysisState.drillCategory = null;
+      renderAnalysis();
+    });
+    document.getElementById('periodNext').addEventListener('click', function () {
+      var period = getPeriod(analysisState.periodType, analysisState.anchor, state.monthStartDay);
+      analysisState.anchor = shiftPeriod(period, analysisState.periodType, state.monthStartDay, 1);
+      analysisState.drillCategory = null;
+      renderAnalysis();
+    });
+    var back = document.getElementById('backToBreakdown');
+    if (back) back.addEventListener('click', function () { analysisState.drillCategory = null; renderAnalysis(); });
+    document.querySelectorAll('.cat-row').forEach(function (row) {
+      row.addEventListener('click', function () { analysisState.drillCategory = row.dataset.cat; renderAnalysis(); });
+    });
+    document.querySelectorAll('#analysisView .entry-row').forEach(function (row) {
+      row.addEventListener('click', function () {
+        var entry = state.entries.find(function (e) { return e.id === row.dataset.id; });
+        if (entry) openAddPanel(entry);
+      });
+    });
+  }
+
   function render() {
+    var historyView = document.getElementById('historyView');
+    var analysisView = document.getElementById('analysisView');
+    var analysisBtn = document.getElementById('openAnalysis');
+    if (state.view === 'analysis') {
+      document.getElementById('todayLabel').textContent = 'Analysis';
+      historyView.hidden = true;
+      analysisView.hidden = false;
+      if (analysisBtn) analysisBtn.classList.add('primary');
+      renderAnalysis();
+      return;
+    }
+    historyView.hidden = false;
+    analysisView.hidden = true;
+    if (analysisBtn) analysisBtn.classList.remove('primary');
+
     document.getElementById('todayLabel').textContent = headerLabel();
     var todaysTotal = state.entries.filter(function (e) { return e.date === todayKey(); })
       .reduce(function (sum, e) { return sum + e.amount; }, 0);
@@ -494,10 +802,11 @@
       if (a.date !== b.date) return a.date < b.date ? -1 : 1;
       return a.ts - b.ts;
     });
-    var lines = ['Date,Description,Amount (SEK)'];
+    var lines = ['Date,Description,Amount (SEK),Category'];
     rows.forEach(function (e) {
       var desc = '"' + String(e.description || '').replace(/"/g, '""') + '"';
-      lines.push(e.date + ',' + desc + ',' + e.amount.toFixed(2));
+      var cat = '"' + String(e.category || UNCATEGORIZED).replace(/"/g, '""') + '"';
+      lines.push(e.date + ',' + desc + ',' + e.amount.toFixed(2) + ',' + cat);
     });
     var csv = lines.join('\r\n');
     var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -531,12 +840,22 @@
     panel.innerHTML = '';
   }
 
+  function categoryChipsHtml(selected) {
+    var html = '<div class="field"><label>Category</label><div class="cat-chips" id="catChips">';
+    state.categories.forEach(function (c) {
+      html += '<button type="button" class="cat-chip' + (c === selected ? ' active' : '') + '" data-cat="' + c.replace(/"/g, '&quot;') + '">' + c + '</button>';
+    });
+    html += '</div></div>';
+    return html;
+  }
+
   function openAddPanel(existingEntry) {
     var isEdit = !!existingEntry;
     var initialType = isEdit && existingEntry.amount < 0 ? 'refund' : 'expense';
     var initialAmount = isEdit ? Math.abs(existingEntry.amount).toFixed(2).replace('.', ',') : '';
     var initialDesc = isEdit ? existingEntry.description : '';
     var initialDate = isEdit ? existingEntry.date : todayKey();
+    var selectedCategory = isEdit ? (existingEntry.category || null) : null;
 
     panel.innerHTML =
       '<h2>' + (isEdit ? 'Edit expense' : 'Log an expense') + '</h2>' +
@@ -547,6 +866,7 @@
       '<button type="button" class="type-btn' + (initialType === 'expense' ? ' active' : '') + '" id="typeExpense" data-type="expense">Expense</button>' +
       '<button type="button" class="type-btn' + (initialType === 'refund' ? ' active' : '') + '" id="typeRefund" data-type="refund">Refund (money back)</button>' +
       '</div></div>' +
+      categoryChipsHtml(selectedCategory) +
       '<div class="field"><label for="descInput">What was it?</label>' +
       '<input type="text" id="descInput" placeholder="Coffee, bus fare, groceries…" autocomplete="off" value="' + initialDesc.replace(/"/g, '&quot;') + '"></div>' +
       '<div class="field"><label for="dateInput">Date</label>' +
@@ -581,15 +901,30 @@
 
     document.getElementById('cancelAdd').addEventListener('click', closePanel);
 
+    document.querySelectorAll('#catChips .cat-chip').forEach(function (chip) {
+      chip.addEventListener('click', function () {
+        var cat = chip.dataset.cat;
+        if (selectedCategory === cat) {
+          selectedCategory = null;
+          chip.classList.remove('active');
+        } else {
+          selectedCategory = cat;
+          document.querySelectorAll('#catChips .cat-chip').forEach(function (c) { c.classList.remove('active'); });
+          chip.classList.add('active');
+        }
+      });
+    });
+
     function commitEntry(amount, desc, date) {
       if (isEdit) {
         existingEntry.amount = amount;
         existingEntry.description = desc;
         existingEntry.date = date;
+        existingEntry.category = selectedCategory;
       } else {
         state.entries.push({
           id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
-          date: date, amount: amount, description: desc, ts: Date.now()
+          date: date, amount: amount, description: desc, ts: Date.now(), category: selectedCategory
         });
       }
       saveEntries();
@@ -652,6 +987,56 @@
       '<button class="btn btn-secondary" id="exportCsvBtn" style="width:100%;margin-top:12px;">Export all entries as CSV</button>';
   }
 
+  function categoriesManageMarkup() {
+    return '<div class="field"><label>Categories</label><div id="catManageList"></div>' +
+      '<div class="cat-add-row"><input type="text" id="newCatInput" placeholder="New category"><button type="button" class="btn btn-secondary" id="addCatBtn">Add</button></div>' +
+      '</div>';
+  }
+
+  function bindCategoryManage() {
+    function renderList() {
+      var wrap = document.getElementById('catManageList');
+      wrap.innerHTML = state.categories.map(function (c, i) {
+        return '<div class="cat-manage-row">' +
+          '<input type="text" class="cat-manage-input" data-idx="' + i + '" value="' + c.replace(/"/g, '&quot;') + '">' +
+          '<button type="button" class="cat-manage-del" data-idx="' + i + '" aria-label="Delete category">\u00d7</button></div>';
+      }).join('');
+      wrap.querySelectorAll('.cat-manage-input').forEach(function (inp) {
+        inp.addEventListener('change', function () {
+          var i = +inp.dataset.idx;
+          var oldName = state.categories[i];
+          var newName = inp.value.trim();
+          if (!newName || newName === oldName) { inp.value = oldName; return; }
+          state.categories[i] = newName;
+          state.entries.forEach(function (e) { if (e.category === oldName) e.category = newName; });
+          saveCategories();
+          saveEntries();
+        });
+      });
+      wrap.querySelectorAll('.cat-manage-del').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var i = +btn.dataset.idx;
+          var name = state.categories[i];
+          state.categories.splice(i, 1);
+          state.entries.forEach(function (e) { if (e.category === name) e.category = null; });
+          saveCategories();
+          saveEntries();
+          renderList();
+        });
+      });
+    }
+    renderList();
+    document.getElementById('addCatBtn').addEventListener('click', function () {
+      var inp = document.getElementById('newCatInput');
+      var name = inp.value.trim();
+      if (!name || state.categories.indexOf(name) !== -1) return;
+      state.categories.push(name);
+      saveCategories();
+      inp.value = '';
+      renderList();
+    });
+  }
+
   function openSettingsPanel() {
     var val = state.allowance !== null && !isNaN(state.allowance) ? state.allowance : '';
     panel.innerHTML =
@@ -659,12 +1044,17 @@
       '<div class="field"><label for="allowanceInput">Amount per day</label>' +
       '<input type="text" inputmode="decimal" id="allowanceInput" class="mono-input" placeholder="250" autocomplete="off" value="' + val + '">' +
       '<p class="hint">Each day\u2019s total is checked against this. Under is green, over is red.</p></div>' +
+      '<div class="field"><label for="monthStartInput">Month period starts on day</label>' +
+      '<input type="number" min="1" max="31" id="monthStartInput" class="mono-input" value="' + state.monthStartDay + '">' +
+      '<p class="hint">Used for the Month total in Analysis. If a month doesn\u2019t have that day, its last day is used instead.</p></div>' +
+      categoriesManageMarkup() +
       '<div class="panel-actions">' +
       '<button class="btn btn-secondary" id="cancelSettings">Cancel</button>' +
       '<button class="btn btn-primary" id="saveSettings">Save</button>' +
       '</div>' +
       '<div class="diag-divider"></div>' +
-      diagnosticsMarkup();
+      diagnosticsMarkup() +
+      '<p class="version-line">Ledger v' + APP_VERSION + '</p>';
     showPanel();
     setTimeout(function () { document.getElementById('allowanceInput').focus(); }, 50);
 
@@ -675,10 +1065,16 @@
       if (isNaN(v) || v < 0) { document.getElementById('allowanceInput').focus(); return; }
       state.allowance = Math.round(v * 100) / 100;
       saveAllowance();
+      var startRaw = parseInt(document.getElementById('monthStartInput').value, 10);
+      if (!isNaN(startRaw)) {
+        state.monthStartDay = Math.min(31, Math.max(1, startRaw));
+        saveMonthStartDay();
+      }
       closePanel();
       render();
     });
     document.getElementById('exportCsvBtn').addEventListener('click', downloadCsv);
+    bindCategoryManage();
   }
 
   function scanIntroMarkup() {
@@ -708,7 +1104,7 @@
         if (!row.include) return;
         state.entries.push({
           id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
-          date: row.date, amount: row.amount, description: row.description, ts: Date.now()
+          date: row.date, amount: row.amount, description: row.description, ts: Date.now(), category: row.category || null
         });
       });
       saveEntries();
@@ -740,7 +1136,7 @@
     document.getElementById('parseImportBtn').addEventListener('click', function () {
       var text = document.getElementById('importText').value;
       var rows = parseImportText(text);
-      parsedRows = rows.map(function (r) { return { amount: r.amount, description: r.description, date: r.date, include: true }; });
+      parsedRows = rows.map(function (r) { return { amount: r.amount, description: r.description, date: r.date, category: null, include: true }; });
       flagDuplicates();
       renderParsedRows();
     });
@@ -880,6 +1276,12 @@
       if (row.duplicate) {
         html += '<div class="dup-note">Looks already logged \u2014 check the box to add anyway</div>';
       }
+      html += '<div class="scan-row-cat"><select data-idx="' + i + '" class="scan-cat">' +
+        '<option value="">' + UNCATEGORIZED + '</option>' +
+        state.categories.map(function (c) {
+          return '<option value="' + c.replace(/"/g, '&quot;') + '"' + (row.category === c ? ' selected' : '') + '>' + c + '</option>';
+        }).join('') +
+        '</select></div>';
     });
     html += '</div>';
     var body = document.getElementById('scanBody');
@@ -896,6 +1298,9 @@
         var v = parseFloat(el.value.replace(',', '.'));
         parsedRows[+el.dataset.idx].amount = isNaN(v) ? 0 : v;
       });
+    });
+    body.querySelectorAll('.scan-cat').forEach(function (el) {
+      el.addEventListener('change', function () { parsedRows[+el.dataset.idx].category = el.value || null; });
     });
   }
 
@@ -930,7 +1335,7 @@
           return {
             amount: Math.round(r.amount * 100) / 100,
             description: typeof r.description === 'string' && r.description.trim() ? r.description.trim() : '(no description)',
-            date: d, include: true
+            date: d, category: null, include: true
           };
         });
       flagDuplicates();
@@ -949,6 +1354,11 @@
 
   document.getElementById('openAdd').addEventListener('click', function () { openAddPanel(); });
   document.getElementById('openSettings').addEventListener('click', openSettingsPanel);
+  document.getElementById('openAnalysis').addEventListener('click', function () {
+    state.view = state.view === 'analysis' ? 'history' : 'analysis';
+    closePanel();
+    render();
+  });
 
   async function initScanning() {
     try {
