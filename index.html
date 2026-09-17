@@ -424,10 +424,17 @@
   var DEFAULT_CATEGORIES = ['Mat', 'Transport', 'Nöje', 'Räkningar', 'Övrigt', 'Take-away', 'Fika', 'Kläder'];
   var UNCATEGORIZED = 'Okategoriserad';
   var BUCKET_LABELS = { everyday: 'Everyday', fun: 'Fun' };
-  var APP_VERSION = '1.8';
+  var FUN_MILESTONES = [20, 40, 60, 80, 100];
+  function funMilestoneBadgeId(pct) { return 'funMilestone' + pct; }
+  function funMilestoneVariant(pct) {
+    if (pct >= 100) return 'crown';
+    if (pct >= 60) return 'sunglasses';
+    return 'plain';
+  }
+  var APP_VERSION = '1.9';
   var state = {
     entries: [], allowance: null, categories: [], monthStartDay: 1, view: 'history',
-    buckets: { trackingStart: null, everydayTarget: null }, badges: []
+    buckets: { trackingStart: null, everydayTarget: null, funTarget: null, funNote: '' }, badges: []
   };
   var storageStatus = { ok: null, lastSaved: null };
   var analysisState = { periodType: 'month', anchor: new Date(), mode: 'total', drillCategory: null };
@@ -471,8 +478,10 @@
     } catch (e) { state.monthStartDay = 1; }
     try {
       var rawBuckets = localStorage.getItem(BUCKETS_KEY);
-      state.buckets = rawBuckets ? JSON.parse(rawBuckets) : { trackingStart: null, everydayTarget: null };
-    } catch (e) { state.buckets = { trackingStart: null, everydayTarget: null }; }
+      state.buckets = rawBuckets ? JSON.parse(rawBuckets) : { trackingStart: null, everydayTarget: null, funTarget: null, funNote: '' };
+      if (state.buckets.funTarget === undefined) state.buckets.funTarget = null;
+      if (state.buckets.funNote === undefined) state.buckets.funNote = '';
+    } catch (e) { state.buckets = { trackingStart: null, everydayTarget: null, funTarget: null, funNote: '' }; }
     try {
       var rawBadges = localStorage.getItem(BADGES_KEY);
       state.badges = rawBadges ? JSON.parse(rawBadges) : [];
@@ -753,16 +762,17 @@
   function bucketBalance(bucket) {
     var pool = bucketPool();
     var target = state.buckets.everydayTarget;
-    var hasTarget = target !== null && !isNaN(target) && target > 0;
-    var everydayShare = hasTarget ? Math.min(pool, target) : pool;
-    var funShare = hasTarget ? Math.max(0, pool - target) : 0;
+    var effectiveTarget = (target !== null && !isNaN(target) && target > 0) ? target : 0;
+    var everydayShare = Math.min(pool, effectiveTarget);
+    var funShare = Math.max(0, pool - effectiveTarget);
     var raw = bucket === 'everyday' ? everydayShare : funShare;
     return raw - bucketCashedOut(bucket);
   }
 
   function bucketCardHtml(bucket) {
     var balance = bucketBalance(bucket);
-    var target = bucket === 'everyday' ? state.buckets.everydayTarget : null;
+    var target = bucket === 'everyday' ? state.buckets.everydayTarget : state.buckets.funTarget;
+    var note = bucket === 'fun' ? state.buckets.funNote : '';
     var hasTarget = target !== null && !isNaN(target) && target > 0;
     var over = balance < 0;
     var pct = hasTarget ? Math.max(0, Math.min(100, Math.round(balance / target * 100))) : 0;
@@ -771,7 +781,7 @@
       '<div class="bucket-card-amt ' + (over ? 'over' : 'good') + '">' + formatMoney(balance) + '</div>' +
       (hasTarget
         ? '<div class="cat-bar"><div class="cat-bar-fill' + (over ? ' over' : '') + '" style="width:' + (over ? 100 : pct) + '%"></div></div>' +
-          '<p class="hint" style="margin-top:4px;">of ' + formatMoney(target) + '</p>'
+          '<p class="hint" style="margin-top:4px;">of ' + formatMoney(target) + (note ? ' — ' + note.replace(/</g, '&lt;') : '') + '</p>'
         : '') +
       '</div>';
   }
@@ -815,6 +825,14 @@
     }
 
     if (state.entries.some(function (e) { return !!e.bucket; })) unlock('bucketCashout');
+
+    var funTarget = state.buckets.funTarget;
+    if (funTarget !== null && !isNaN(funTarget) && funTarget > 0) {
+      var funBal = bucketBalance('fun');
+      FUN_MILESTONES.forEach(function (pct) {
+        if (funBal >= funTarget * (pct / 100)) unlock(funMilestoneBadgeId(pct));
+      });
+    }
 
     if (changed) { state.badges = earned; saveBadges(); }
   }
@@ -1303,13 +1321,20 @@
 
   function bucketConfigMarkup() {
     var target = state.buckets.everydayTarget;
+    var funTarget = state.buckets.funTarget;
+    var funNote = state.buckets.funNote || '';
     var start = state.buckets.trackingStart || todayKey();
     return '<div class="field"><label for="everydayTargetInput">Everyday bucket target</label>' +
       '<input type="text" inputmode="decimal" id="everydayTargetInput" class="mono-input" placeholder="e.g. 1500" autocomplete="off" value="' + (target !== null && !isNaN(target) ? target : '') + '">' +
       '<p class="hint">Savings fill this bucket first. Anything extra overflows into the Fun bucket.</p></div>' +
       '<div class="field"><label for="trackingStartInput">Tracking starts on</label>' +
       '<input type="date" id="trackingStartInput" value="' + start + '"></div>' +
+      '<div class="field"><label for="funTargetInput">Fun bucket goal (optional)</label>' +
+      '<input type="text" inputmode="decimal" id="funTargetInput" class="mono-input" placeholder="e.g. 3000" autocomplete="off" value="' + (funTarget !== null && !isNaN(funTarget) ? funTarget : '') + '"></div>' +
+      '<div class="field"><label for="funNoteInput">What are you saving for? (optional)</label>' +
+      '<input type="text" id="funNoteInput" placeholder="e.g. Playstation" autocomplete="off" value="' + funNote.replace(/"/g, '&quot;') + '"></div>' +
       '<div class="field"><label>Buckets</label><div class="bucket-row">' + bucketCardHtml('everyday') + bucketCardHtml('fun') + '</div></div>' +
+      funMilestonesMarkup() +
       '<div class="field"><label>Cash-out history</label><div id="bucketCashoutList">' + bucketCashoutHistoryMarkup() + '</div></div>';
   }
 
@@ -1330,8 +1355,27 @@
     return '<div class="field"><label>Achievements (tap one)</label><div class="badge-row" id="badgeRow">' + badgeRowHtml() + '</div></div>';
   }
 
-  function bindBadgeClicks() {
-    var row = document.getElementById('badgeRow');
+  function funMilestoneRowHtml() {
+    var goalLabel = state.buckets.funNote ? state.buckets.funNote : 'your Fun goal';
+    return FUN_MILESTONES.map(function (pct) {
+      var id = funMilestoneBadgeId(pct);
+      var earned = state.badges.indexOf(id) !== -1;
+      var variant = funMilestoneVariant(pct);
+      var label = (pct + '% of ' + goalLabel).replace(/"/g, '&quot;');
+      return '<div class="badge-item' + (earned ? '' : ' badge-locked') + '" data-variant="' + variant + '" data-label="' + label + '" data-earned="' + (earned ? '1' : '0') + '">' +
+        capybaraSvg(variant, 30) + '<span>' + pct + '%</span></div>';
+    }).join('');
+  }
+
+  function funMilestonesMarkup() {
+    var target = state.buckets.funTarget;
+    if (target === null || isNaN(target) || target <= 0) return '';
+    return '<div class="field"><label>Fun goal progress (tap one)</label>' +
+      '<div class="badge-row" id="funMilestoneRow" style="flex-wrap:wrap;">' + funMilestoneRowHtml() + '</div></div>';
+  }
+
+  function bindBadgeRowClicks(rowId) {
+    var row = document.getElementById(rowId);
     if (!row) return;
     row.addEventListener('click', function (evt) {
       var item = evt.target.closest('.badge-item');
@@ -1340,11 +1384,6 @@
       openCapybaraLightbox(item.dataset.variant, item.dataset.label,
         earned ? 'Unlocked!' : 'Not unlocked yet — keep going!', !earned);
     });
-  }
-
-  function refreshBadgeRow() {
-    var el = document.getElementById('badgeRow');
-    if (el) el.innerHTML = badgeRowHtml();
   }
 
   function categoriesManageMarkup() {
@@ -1437,13 +1476,19 @@
       if (target !== null && (isNaN(target) || target < 0)) target = null;
       state.buckets.everydayTarget = target;
       state.buckets.trackingStart = document.getElementById('trackingStartInput').value || todayKey();
+      var funTargetRaw = document.getElementById('funTargetInput').value.replace(',', '.').trim();
+      var funTarget = funTargetRaw === '' ? null : parseFloat(funTargetRaw);
+      if (funTarget !== null && (isNaN(funTarget) || funTarget < 0)) funTarget = null;
+      state.buckets.funTarget = funTarget;
+      state.buckets.funNote = document.getElementById('funNoteInput').value.trim();
       saveBuckets();
       closePanel();
       render();
     });
     document.getElementById('exportCsvBtn').addEventListener('click', downloadCsv);
     bindCategoryManage();
-    bindBadgeClicks();
+    bindBadgeRowClicks('badgeRow');
+    bindBadgeRowClicks('funMilestoneRow');
   }
 
   function scanIntroMarkup() {
