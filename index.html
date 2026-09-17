@@ -321,20 +321,28 @@
   .streak-badge .capybara-icon { flex-shrink: 0; }
 
   .goal-block { margin: 4px 0 18px; }
-  .goal-row-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; gap: 10px; }
-  .goal-label { display: flex; align-items: center; gap: 6px; font-size: 14px; }
-  .goal-dates { font-size: 12px; color: var(--ink-faint); font-weight: 400; }
-  .goal-amt { font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: var(--ink-soft); white-space: nowrap; }
   .cat-bar-fill.over { background: var(--over); }
 
-  .goal-date-row { display: flex; gap: 10px; }
-  .goal-date-row > div { flex: 1; }
-  .goal-history-row { position: relative; padding: 12px 22px 12px 0; border-bottom: 1px solid var(--hairline); }
-  .goal-history-row:last-child { border-bottom: none; }
-  .goal-del {
-    position: absolute; top: 10px; right: 0; background: none; border: none;
-    color: var(--ink-faint); font-size: 18px; line-height: 1; cursor: pointer; padding: 2px 4px;
+  .bucket-row { display: flex; gap: 12px; }
+  .bucket-card {
+    flex: 1; background: var(--surface-2); border-radius: 12px; padding: 12px 14px;
   }
+  .bucket-card-label { font-size: 12px; color: var(--ink-soft); margin-bottom: 4px; }
+  .bucket-card-amt { font-family: 'IBM Plex Mono', monospace; font-size: 17px; font-weight: 500; margin-bottom: 6px; }
+  .bucket-card-amt.good { color: var(--good); }
+  .bucket-card-amt.over { color: var(--over); }
+
+  .entry-bucket-tag {
+    display: inline-block; font-size: 10px; font-weight: 500; color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    border-radius: 8px; padding: 1px 6px; margin-left: 6px; vertical-align: middle;
+  }
+
+  .bucket-cashout-row { padding: 10px 0; border-bottom: 1px solid var(--hairline); }
+  .bucket-cashout-row:last-child { border-bottom: none; }
+  .cashout-row-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .cashout-desc { font-size: 14px; }
+  .cashout-amt { font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: var(--ink-soft); white-space: nowrap; }
 
   .badge-row { display: flex; gap: 12px; }
   .badge-item {
@@ -409,17 +417,17 @@
   var LAST_SAVED_KEY = 'ledger.lastSaved.v1';
   var CATEGORIES_KEY = 'ledger.categories.v1';
   var MONTH_START_KEY = 'ledger.monthStartDay.v1';
-  var SAVINGS_GOAL_KEY = 'ledger.savingsGoal.v1';
-  var SAVINGS_GOALS_KEY = 'ledger.savingsGoals.v1';
+  var BUCKETS_KEY = 'ledger.buckets.v1';
   var BADGES_KEY = 'ledger.badges.v1';
   var CATEGORY_MIGRATION_KEY = 'ledger.categoriesMigrationV2.v1';
   var NEW_CATEGORIES_V2 = ['Take-away', 'Fika', 'Kläder'];
   var DEFAULT_CATEGORIES = ['Mat', 'Transport', 'Nöje', 'Räkningar', 'Övrigt', 'Take-away', 'Fika', 'Kläder'];
   var UNCATEGORIZED = 'Okategoriserad';
-  var APP_VERSION = '1.7';
+  var BUCKET_LABELS = { everyday: 'Everyday', fun: 'Fun' };
+  var APP_VERSION = '1.8';
   var state = {
     entries: [], allowance: null, categories: [], monthStartDay: 1, view: 'history',
-    savingsGoals: [], badges: []
+    buckets: { trackingStart: null, everydayTarget: null }, badges: []
   };
   var storageStatus = { ok: null, lastSaved: null };
   var analysisState = { periodType: 'month', anchor: new Date(), mode: 'total', drillCategory: null };
@@ -462,31 +470,9 @@
       if (isNaN(state.monthStartDay) || state.monthStartDay < 1 || state.monthStartDay > 31) state.monthStartDay = 1;
     } catch (e) { state.monthStartDay = 1; }
     try {
-      var rawGoals = localStorage.getItem(SAVINGS_GOALS_KEY);
-      if (rawGoals) {
-        state.savingsGoals = JSON.parse(rawGoals);
-      } else {
-        state.savingsGoals = [];
-        try {
-          var rawOldGoal = localStorage.getItem(SAVINGS_GOAL_KEY);
-          if (rawOldGoal) {
-            var oldGoal = JSON.parse(rawOldGoal);
-            if (oldGoal && oldGoal.amount !== null && !isNaN(oldGoal.amount)) {
-              var migStart = getMonthPeriod(new Date(), state.monthStartDay).start;
-              state.savingsGoals.push({
-                id: 'migrated-' + Date.now().toString(36),
-                amount: oldGoal.amount,
-                note: oldGoal.note || '',
-                startDate: dayKey(migStart),
-                endDate: null,
-                createdAt: Date.now()
-              });
-              saveSavingsGoals();
-            }
-          }
-        } catch (e2) {}
-      }
-    } catch (e) { state.savingsGoals = []; }
+      var rawBuckets = localStorage.getItem(BUCKETS_KEY);
+      state.buckets = rawBuckets ? JSON.parse(rawBuckets) : { trackingStart: null, everydayTarget: null };
+    } catch (e) { state.buckets = { trackingStart: null, everydayTarget: null }; }
     try {
       var rawBadges = localStorage.getItem(BADGES_KEY);
       state.badges = rawBadges ? JSON.parse(rawBadges) : [];
@@ -539,9 +525,9 @@
     } catch (e) { storageStatus.ok = false; }
   }
 
-  function saveSavingsGoals() {
+  function saveBuckets() {
     try {
-      localStorage.setItem(SAVINGS_GOALS_KEY, JSON.stringify(state.savingsGoals));
+      localStorage.setItem(BUCKETS_KEY, JSON.stringify(state.buckets));
       storageStatus.ok = true;
       storageStatus.lastSaved = Date.now();
       try { localStorage.setItem(LAST_SAVED_KEY, String(storageStatus.lastSaved)); } catch (e2) {}
@@ -591,7 +577,7 @@
     var keys = Object.keys(groups).sort().reverse();
     return keys.map(function (k) {
       var items = groups[k].slice().sort(function (a, b) { return b.ts - a.ts; });
-      var total = items.reduce(function (sum, e) { return sum + e.amount; }, 0);
+      var total = items.filter(function (e) { return !e.bucket; }).reduce(function (sum, e) { return sum + e.amount; }, 0);
       return { date: k, items: items, total: total };
     });
   }
@@ -724,7 +710,7 @@
     while (true) {
       var key = dayKey(cursor);
       if (key < earliestKey) break;
-      var total = state.entries.filter(function (e) { return e.date === key; })
+      var total = state.entries.filter(function (e) { return e.date === key && !e.bucket; })
         .reduce(function (sum, e) { return sum + e.amount; }, 0);
       if (total <= state.allowance) {
         streak++;
@@ -734,51 +720,60 @@
     return streak;
   }
 
-  function entriesInDateRange(startKey, endKey) {
-    return state.entries.filter(function (e) { return e.date >= startKey && e.date <= endKey; });
+  // ---------------------------------------------------------------
+  // Buckets: a priority savings system. Every day's (allowance - spend)
+  // on untagged entries adds to a shared pool. That pool fills the
+  // Everyday bucket up to its target first, then overflows into Fun.
+  // Logging an expense "from" a bucket subtracts it from that bucket's
+  // balance and excludes it from the normal budget/streak math, since
+  // it's funded from savings rather than that day's allowance.
+  // ---------------------------------------------------------------
+  function bucketTrackingDays() {
+    if (!state.buckets.trackingStart) return 0;
+    var start = new Date(state.buckets.trackingStart + 'T00:00:00');
+    var end = new Date(todayKey() + 'T00:00:00');
+    return Math.max(0, Math.round((end - start) / 86400000) + 1);
   }
 
-  function getActiveGoalIndex() {
-    var today = todayKey();
-    for (var i = state.savingsGoals.length - 1; i >= 0; i--) {
-      if (state.savingsGoals[i].startDate <= today) return i;
-    }
-    return -1;
+  function bucketPool() {
+    if (state.allowance === null || isNaN(state.allowance) || !state.buckets.trackingStart) return 0;
+    var start = state.buckets.trackingStart;
+    var end = todayKey();
+    var untaggedSpent = state.entries
+      .filter(function (e) { return e.date >= start && e.date <= end && !e.bucket; })
+      .reduce(function (s, e) { return s + e.amount; }, 0);
+    return state.allowance * bucketTrackingDays() - untaggedSpent;
   }
 
-  function goalEffectiveRange(goal, index, goalsArr) {
-    var start = goal.startDate;
-    var end;
-    var next = goalsArr[index + 1];
-    if (goal.endDate) {
-      end = goal.endDate;
-    } else if (next) {
-      var d = new Date(next.startDate + 'T00:00:00');
-      d.setDate(d.getDate() - 1);
-      end = dayKey(d);
-    } else {
-      end = todayKey();
-    }
-    if (end > todayKey()) end = todayKey();
-    return { start: start, end: end };
+  function bucketCashedOut(bucket) {
+    return state.entries.filter(function (e) { return e.bucket === bucket; })
+      .reduce(function (s, e) { return s + e.amount; }, 0);
   }
 
-  function goalRangeDays(range) {
-    var start = new Date(range.start + 'T00:00:00');
-    var end = new Date(range.end + 'T00:00:00');
-    return Math.round((end - start) / 86400000) + 1;
+  function bucketBalance(bucket) {
+    var pool = bucketPool();
+    var target = state.buckets.everydayTarget;
+    var hasTarget = target !== null && !isNaN(target) && target > 0;
+    var everydayShare = hasTarget ? Math.min(pool, target) : pool;
+    var funShare = hasTarget ? Math.max(0, pool - target) : 0;
+    var raw = bucket === 'everyday' ? everydayShare : funShare;
+    return raw - bucketCashedOut(bucket);
   }
 
-  function goalSavedAmount(range) {
-    var spent = periodTotal(entriesInDateRange(range.start, range.end));
-    return state.allowance * goalRangeDays(range) - spent;
-  }
-
-  function formatDateRangeLabel(startKey, endKey) {
-    var startLabel = new Date(startKey + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-    if (!endKey) return 'since ' + startLabel;
-    var endLabel = new Date(endKey + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-    return startLabel + ' – ' + endLabel;
+  function bucketCardHtml(bucket) {
+    var balance = bucketBalance(bucket);
+    var target = bucket === 'everyday' ? state.buckets.everydayTarget : null;
+    var hasTarget = target !== null && !isNaN(target) && target > 0;
+    var over = balance < 0;
+    var pct = hasTarget ? Math.max(0, Math.min(100, Math.round(balance / target * 100))) : 0;
+    return '<div class="bucket-card">' +
+      '<div class="bucket-card-label">' + BUCKET_LABELS[bucket] + '</div>' +
+      '<div class="bucket-card-amt ' + (over ? 'over' : 'good') + '">' + formatMoney(balance) + '</div>' +
+      (hasTarget
+        ? '<div class="cat-bar"><div class="cat-bar-fill' + (over ? ' over' : '') + '" style="width:' + (over ? 100 : pct) + '%"></div></div>' +
+          '<p class="hint" style="margin-top:4px;">of ' + formatMoney(target) + '</p>'
+        : '') +
+      '</div>';
   }
 
   function openCapybaraLightbox(variant, title, subtitle, muted) {
@@ -811,7 +806,7 @@
       var todayPeriod = getMonthPeriod(new Date(), state.monthStartDay);
       var prevAnchor = shiftPeriod(todayPeriod, 'month', state.monthStartDay, -1);
       var prevPeriod = getMonthPeriod(prevAnchor, state.monthStartDay);
-      var prevItems = entriesInPeriod(prevPeriod);
+      var prevItems = entriesInPeriod(prevPeriod).filter(function (e) { return !e.bucket; });
       if (prevItems.length > 0) {
         var prevTotal = periodTotal(prevItems);
         var prevDays = Math.round((prevPeriod.end - prevPeriod.start) / 86400000) + 1;
@@ -819,15 +814,7 @@
       }
     }
 
-    if (state.allowance !== null && !isNaN(state.allowance)) {
-      state.savingsGoals.forEach(function (g, idx) {
-        var range = goalEffectiveRange(g, idx, state.savingsGoals);
-        if (range.end < todayKey()) {
-          var items = entriesInDateRange(range.start, range.end);
-          if (items.length > 0 && goalSavedAmount(range) >= g.amount) unlock('goalMet');
-        }
-      });
-    }
+    if (state.entries.some(function (e) { return !!e.bucket; })) unlock('bucketCashout');
 
     if (changed) { state.badges = earned; saveBadges(); }
   }
@@ -837,7 +824,8 @@
     var type = analysisState.periodType;
     var period = getPeriod(type, analysisState.anchor, state.monthStartDay);
     var items = entriesInPeriod(period);
-    var total = periodTotal(items);
+    var budgetItems = items.filter(function (e) { return !e.bucket; });
+    var total = periodTotal(budgetItems);
     var days = Math.round((period.end - period.start) / 86400000) + 1;
     var today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -858,26 +846,12 @@
         return '<button type="button" class="type-btn' + (t === type ? ' active' : '') + '" data-type="' + t + '">' + lbl + '</button>';
       }).join('') + '</div>';
 
-    var activeGoalIdx = getActiveGoalIndex();
-    if (activeGoalIdx !== -1) {
-      var activeGoal = state.savingsGoals[activeGoalIdx];
-      var activeRange = goalEffectiveRange(activeGoal, activeGoalIdx, state.savingsGoals);
-      var activeGoalDateLabel = formatDateRangeLabel(activeRange.start, activeGoal.endDate ? activeRange.end : null);
-      html += '<div class="goal-block">';
-      if (!hasAllowance) {
-        html += '<div class="goal-row-top"><span class="goal-label">Savings goal <span class="goal-dates">(' + activeGoalDateLabel + ')</span></span></div>' +
-          '<p class="hint">Set a daily allowance to start saving toward this goal.</p>';
-      } else {
-        var activeSaved = goalSavedAmount(activeRange);
-        var activeGoalMet = activeSaved >= activeGoal.amount;
-        var activeGoalPct = Math.max(0, Math.min(100, Math.round(activeSaved / activeGoal.amount * 100)));
-        html += '<div class="goal-row-top"><span class="goal-label">' + (activeGoalMet ? capybaraSvg('crown', 18) : '') +
-          ' Savings goal <span class="goal-dates">(' + activeGoalDateLabel + ')</span></span>' +
-          '<span class="goal-amt">' + (activeSaved >= 0 ? formatMoney(activeSaved) + ' saved' : formatMoney(Math.abs(activeSaved)) + ' over pace') + '</span></div>' +
-          '<div class="cat-bar"><div class="cat-bar-fill' + (activeGoalMet ? '' : ' over') + '" style="width:' + (activeSaved >= 0 ? activeGoalPct : 100) + '%"></div></div>' +
-          '<p class="hint" style="margin-top:6px;">Goal: ' + formatMoney(activeGoal.amount) + (activeGoalMet && activeGoal.note ? ' — ' + activeGoal.note.replace(/</g, '&lt;') : '') + '</p>';
-      }
-      html += '</div>';
+    if (!state.buckets.trackingStart) {
+      html += '<div class="goal-block"><p class="hint">Set up the Everyday/Fun buckets in Settings to start saving toward purchases.</p></div>';
+    } else if (!hasAllowance) {
+      html += '<div class="goal-block"><p class="hint">Set a daily allowance to start saving into your buckets.</p></div>';
+    } else {
+      html += '<div class="goal-block"><div class="bucket-row">' + bucketCardHtml('everyday') + bucketCardHtml('fun') + '</div></div>';
     }
 
     html += '<div class="period-nav">' +
@@ -916,7 +890,8 @@
       } else {
         catItems.forEach(function (e) {
           html += '<div class="entry-row" data-id="' + e.id + '">' +
-            '<span class="entry-desc">' + (e.description || '(no description)') + '</span>' +
+            '<span class="entry-desc">' + (e.description || '(no description)') +
+            (e.bucket ? '<span class="entry-bucket-tag">' + BUCKET_LABELS[e.bucket] + '</span>' : '') + '</span>' +
             '<span class="entry-amount mono' + (e.amount < 0 ? ' refund' : '') + '">' + formatMoney(e.amount) + '</span>' +
             '</div>';
         });
@@ -1006,7 +981,7 @@
     if (analysisBtn) analysisBtn.classList.remove('primary');
 
     document.getElementById('todayLabel').textContent = headerLabel();
-    var todaysTotal = state.entries.filter(function (e) { return e.date === todayKey(); })
+    var todaysTotal = state.entries.filter(function (e) { return e.date === todayKey() && !e.bucket; })
       .reduce(function (sum, e) { return sum + e.amount; }, 0);
     document.getElementById('heroAmount').textContent = formatMoney(todaysTotal);
 
@@ -1065,6 +1040,12 @@
         var desc = document.createElement('span');
         desc.className = 'entry-desc';
         desc.textContent = e.description || '(no description)';
+        if (e.bucket) {
+          var tag = document.createElement('span');
+          tag.className = 'entry-bucket-tag';
+          tag.textContent = BUCKET_LABELS[e.bucket];
+          desc.appendChild(tag);
+        }
         row.appendChild(desc);
         var amt = document.createElement('span');
         amt.className = 'entry-amount mono' + (e.amount < 0 ? ' refund' : '');
@@ -1102,11 +1083,12 @@
       if (a.date !== b.date) return a.date < b.date ? -1 : 1;
       return a.ts - b.ts;
     });
-    var lines = ['Date,Description,Amount (SEK),Category'];
+    var lines = ['Date,Description,Amount (SEK),Category,Bucket'];
     rows.forEach(function (e) {
       var desc = '"' + String(e.description || '').replace(/"/g, '""') + '"';
       var cat = '"' + String(e.category || UNCATEGORIZED).replace(/"/g, '""') + '"';
-      lines.push(e.date + ',' + desc + ',' + e.amount.toFixed(2) + ',' + cat);
+      var bucket = e.bucket ? BUCKET_LABELS[e.bucket] : '';
+      lines.push(e.date + ',' + desc + ',' + e.amount.toFixed(2) + ',' + cat + ',' + bucket);
     });
     var csv = lines.join('\r\n');
     var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -1149,6 +1131,16 @@
     return html;
   }
 
+  function bucketChipsHtml(selected) {
+    var options = [{ id: '', label: 'None' }, { id: 'everyday', label: 'Everyday' }, { id: 'fun', label: 'Fun' }];
+    var html = '<div class="field"><label>Fund from</label><div class="cat-chips" id="bucketChips">';
+    options.forEach(function (o) {
+      html += '<button type="button" class="cat-chip' + ((selected || '') === o.id ? ' active' : '') + '" data-bucket="' + o.id + '">' + o.label + '</button>';
+    });
+    html += '</div><p class="hint">A tagged expense is paid from that bucket’s savings and won’t count against today’s budget or your streak.</p></div>';
+    return html;
+  }
+
   function openAddPanel(existingEntry) {
     var isEdit = !!existingEntry;
     var initialType = isEdit && existingEntry.amount < 0 ? 'refund' : 'expense';
@@ -1156,6 +1148,7 @@
     var initialDesc = isEdit ? existingEntry.description : '';
     var initialDate = isEdit ? existingEntry.date : todayKey();
     var selectedCategory = isEdit ? (existingEntry.category || null) : null;
+    var selectedBucket = isEdit ? (existingEntry.bucket || null) : null;
 
     panel.innerHTML =
       '<h2>' + (isEdit ? 'Edit expense' : 'Log an expense') + '</h2>' +
@@ -1167,6 +1160,7 @@
       '<button type="button" class="type-btn' + (initialType === 'refund' ? ' active' : '') + '" id="typeRefund" data-type="refund">Refund (money back)</button>' +
       '</div></div>' +
       categoryChipsHtml(selectedCategory) +
+      bucketChipsHtml(selectedBucket) +
       '<div class="field"><label for="descInput">What was it?</label>' +
       '<input type="text" id="descInput" placeholder="Coffee, bus fare, groceries…" autocomplete="off" value="' + initialDesc.replace(/"/g, '&quot;') + '"></div>' +
       '<div class="field"><label for="dateInput">Date</label>' +
@@ -1215,16 +1209,25 @@
       });
     });
 
+    document.querySelectorAll('#bucketChips .cat-chip').forEach(function (chip) {
+      chip.addEventListener('click', function () {
+        selectedBucket = chip.dataset.bucket || null;
+        document.querySelectorAll('#bucketChips .cat-chip').forEach(function (c) { c.classList.remove('active'); });
+        chip.classList.add('active');
+      });
+    });
+
     function commitEntry(amount, desc, date) {
       if (isEdit) {
         existingEntry.amount = amount;
         existingEntry.description = desc;
         existingEntry.date = date;
         existingEntry.category = selectedCategory;
+        existingEntry.bucket = selectedBucket;
       } else {
         state.entries.push({
           id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
-          date: date, amount: amount, description: desc, ts: Date.now(), category: selectedCategory
+          date: date, amount: amount, description: desc, ts: Date.now(), category: selectedCategory, bucket: selectedBucket
         });
       }
       saveEntries();
@@ -1287,89 +1290,34 @@
       '<button class="btn btn-secondary" id="exportCsvBtn" style="width:100%;margin-top:12px;">Export all entries as CSV</button>';
   }
 
-  function savingsGoalMarkup() {
-    return '<div class="field"><label for="goalAmountInput">New savings goal amount (optional)</label>' +
-      '<input type="text" inputmode="decimal" id="goalAmountInput" class="mono-input" placeholder="e.g. 6000" autocomplete="off"></div>' +
-      '<div class="field goal-date-row">' +
-      '<div><label for="goalStartInput">Start</label><input type="date" id="goalStartInput" value="' + todayKey() + '"></div>' +
-      '<div><label for="goalEndInput">End (optional)</label><input type="date" id="goalEndInput"></div>' +
-      '</div>' +
-      '<p class="hint" style="margin:-6px 0 12px;">Leave End blank for a goal with no end date.</p>' +
-      '<div class="field"><label for="goalNoteInput">Reward if you hit it (optional)</label>' +
-      '<input type="text" id="goalNoteInput" placeholder="e.g. Movie night" autocomplete="off"></div>' +
-      '<button type="button" class="btn btn-secondary" id="addGoalBtn" style="width:100%;margin-bottom:16px;">Start this goal</button>' +
-      '<div class="field"><label>Savings goal history</label><div id="goalHistoryList"></div></div>';
+  function bucketCashoutHistoryMarkup() {
+    var tagged = state.entries.filter(function (e) { return e.bucket; }).sort(function (a, b) { return b.ts - a.ts; });
+    if (tagged.length === 0) return '<p class="hint">No cash-outs yet.</p>';
+    return tagged.map(function (e) {
+      return '<div class="bucket-cashout-row"><div class="cashout-row-top">' +
+        '<span class="cashout-desc">' + (e.description || '(no description)') +
+        '<span class="entry-bucket-tag">' + BUCKET_LABELS[e.bucket] + '</span></span>' +
+        '<span class="cashout-amt">' + formatMoney(e.amount) + '</span></div></div>';
+    }).join('');
   }
 
-  function bindSavingsGoal() {
-    function renderHistory() {
-      var listEl = document.getElementById('goalHistoryList');
-      var goals = state.savingsGoals;
-      if (goals.length === 0) {
-        listEl.innerHTML = '<p class="hint">No goals yet.</p>';
-        return;
-      }
-      var activeIdx = getActiveGoalIndex();
-      var hasAllowance = state.allowance !== null && !isNaN(state.allowance);
-      var html = '';
-      for (var i = goals.length - 1; i >= 0; i--) {
-        var g = goals[i];
-        var range = goalEffectiveRange(g, i, goals);
-        var isActive = i === activeIdx;
-        var dateLabel = formatDateRangeLabel(range.start, (isActive && !g.endDate) ? null : range.end);
-        html += '<div class="goal-history-row">' +
-          '<button type="button" class="goal-del" data-idx="' + i + '" aria-label="Delete goal">×</button>' +
-          '<div class="goal-row-top"><span class="goal-label">' + (isActive ? '<strong>Active</strong> — ' : '') + dateLabel + '</span>';
-        if (!hasAllowance) {
-          html += '</div><p class="hint">Set a daily allowance to track savings.</p></div>';
-        } else {
-          var saved = goalSavedAmount(range);
-          var met = saved >= g.amount;
-          var pct = Math.max(0, Math.min(100, Math.round(saved / g.amount * 100)));
-          html += '<span class="goal-amt">' + (saved >= 0 ? formatMoney(saved) + ' saved' : formatMoney(Math.abs(saved)) + ' over pace') + '</span></div>' +
-            '<div class="cat-bar"><div class="cat-bar-fill' + (met ? '' : ' over') + '" style="width:' + (saved >= 0 ? pct : 100) + '%"></div></div>' +
-            '<p class="hint" style="margin:4px 0 0;">Goal: ' + formatMoney(g.amount) + (met && g.note ? ' — ' + g.note.replace(/</g, '&lt;') : '') + '</p></div>';
-        }
-      }
-      listEl.innerHTML = html;
-      listEl.querySelectorAll('.goal-del').forEach(function (btn) {
-        btn.addEventListener('click', function () {
-          state.savingsGoals.splice(+btn.dataset.idx, 1);
-          saveSavingsGoals();
-          checkBadges();
-          refreshBadgeRow();
-          renderHistory();
-        });
-      });
-    }
-    renderHistory();
-    document.getElementById('addGoalBtn').addEventListener('click', function () {
-      var raw = document.getElementById('goalAmountInput').value.replace(',', '.').trim();
-      var amount = parseFloat(raw);
-      if (isNaN(amount) || amount <= 0) { document.getElementById('goalAmountInput').focus(); return; }
-      var start = document.getElementById('goalStartInput').value || todayKey();
-      var end = document.getElementById('goalEndInput').value || null;
-      var note = document.getElementById('goalNoteInput').value.trim();
-      state.savingsGoals.push({
-        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
-        amount: Math.round(amount * 100) / 100, note: note, startDate: start, endDate: end, createdAt: Date.now()
-      });
-      saveSavingsGoals();
-      checkBadges();
-      refreshBadgeRow();
-      document.getElementById('goalAmountInput').value = '';
-      document.getElementById('goalNoteInput').value = '';
-      document.getElementById('goalStartInput').value = todayKey();
-      document.getElementById('goalEndInput').value = '';
-      renderHistory();
-    });
+  function bucketConfigMarkup() {
+    var target = state.buckets.everydayTarget;
+    var start = state.buckets.trackingStart || todayKey();
+    return '<div class="field"><label for="everydayTargetInput">Everyday bucket target</label>' +
+      '<input type="text" inputmode="decimal" id="everydayTargetInput" class="mono-input" placeholder="e.g. 1500" autocomplete="off" value="' + (target !== null && !isNaN(target) ? target : '') + '">' +
+      '<p class="hint">Savings fill this bucket first. Anything extra overflows into the Fun bucket.</p></div>' +
+      '<div class="field"><label for="trackingStartInput">Tracking starts on</label>' +
+      '<input type="date" id="trackingStartInput" value="' + start + '"></div>' +
+      '<div class="field"><label>Buckets</label><div class="bucket-row">' + bucketCardHtml('everyday') + bucketCardHtml('fun') + '</div></div>' +
+      '<div class="field"><label>Cash-out history</label><div id="bucketCashoutList">' + bucketCashoutHistoryMarkup() + '</div></div>';
   }
 
   function badgeRowHtml() {
     var defs = [
       { id: 'monthUnderBudget', variant: 'plain', label: 'A full month under budget' },
       { id: 'streak7', variant: 'sunglasses', label: '7-day streak' },
-      { id: 'goalMet', variant: 'crown', label: 'Savings goal met' }
+      { id: 'bucketCashout', variant: 'crown', label: 'First bucket cash-out' }
     ];
     return defs.map(function (d) {
       var earned = state.badges.indexOf(d.id) !== -1;
@@ -1459,7 +1407,7 @@
       '<div class="field"><label for="monthStartInput">Month period starts on day</label>' +
       '<input type="number" min="1" max="31" id="monthStartInput" class="mono-input" value="' + state.monthStartDay + '">' +
       '<p class="hint">Used for the Month total in Analysis. If a month doesn\u2019t have that day, its last day is used instead.</p></div>' +
-      savingsGoalMarkup() +
+      bucketConfigMarkup() +
       badgesMarkup() +
       categoriesManageMarkup() +
       '<div class="panel-actions">' +
@@ -1484,12 +1432,17 @@
         state.monthStartDay = Math.min(31, Math.max(1, startRaw));
         saveMonthStartDay();
       }
+      var targetRaw = document.getElementById('everydayTargetInput').value.replace(',', '.').trim();
+      var target = targetRaw === '' ? null : parseFloat(targetRaw);
+      if (target !== null && (isNaN(target) || target < 0)) target = null;
+      state.buckets.everydayTarget = target;
+      state.buckets.trackingStart = document.getElementById('trackingStartInput').value || todayKey();
+      saveBuckets();
       closePanel();
       render();
     });
     document.getElementById('exportCsvBtn').addEventListener('click', downloadCsv);
     bindCategoryManage();
-    bindSavingsGoal();
     bindBadgeClicks();
   }
 
