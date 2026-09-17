@@ -431,7 +431,7 @@
     if (pct >= 60) return 'sunglasses';
     return 'plain';
   }
-  var APP_VERSION = '1.9';
+  var APP_VERSION = '2.0';
   var state = {
     entries: [], allowance: null, categories: [], monthStartDay: 1, view: 'history',
     buckets: { trackingStart: null, everydayTarget: null, funTarget: null, funNote: '' }, badges: []
@@ -575,6 +575,122 @@
   }
   function headerLabel() {
     return new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+  }
+
+  // ---------------------------------------------------------------
+  // Seasonal holidays: a small emoji + name next to today's date on
+  // days that match. Fixed dates are exact; Christian moving feasts
+  // (Easter, Ascension, Pentecost, Advent) are computed. The three
+  // Thai lunar-calendar holidays (Makha Bucha, Visakha Bucha, Loy
+  // Krathong) don't fall on fixed Gregorian dates and can't be
+  // computed here, so they're best-effort hardcoded per year below —
+  // verify against an official Thai calendar and extend the table
+  // for years beyond it.
+  // ---------------------------------------------------------------
+  var FIXED_HOLIDAYS = [
+    { month: 1, day: 1, emoji: '🎊', name: 'Nyårsdagen' },
+    { month: 2, day: 14, emoji: '❤️', name: 'Alla hjärtans dag' },
+    { month: 3, day: 18, emoji: '🥸', name: 'Pappas födelsedag' },
+    { month: 4, day: 6, emoji: '👑', name: 'Chakri Day' },
+    { month: 5, day: 1, emoji: '🌱', name: 'Första maj' },
+    { month: 5, day: 4, emoji: '👑', name: 'Kröningsdagen' },
+    { month: 6, day: 3, emoji: '💐', name: 'Drottningens födelsedag' },
+    { month: 6, day: 4, emoji: '🎂', name: 'Nices födelsedag' },
+    { month: 6, day: 6, emoji: '🇸🇪', name: 'Sveriges nationaldag' },
+    { month: 7, day: 28, emoji: '👑', name: 'Kungens födelsedag' },
+    { month: 8, day: 12, emoji: '💐', name: 'Mors dag' },
+    { month: 10, day: 31, emoji: '🎃', name: 'Halloween' },
+    { month: 12, day: 5, emoji: '🇹🇭', name: 'Fars dag / Nationaldagen' },
+    { month: 12, day: 10, emoji: '📜', name: 'Konstitutionsdagen' },
+    { month: 12, day: 13, emoji: '✨', name: 'Lucia' },
+    { month: 12, day: 24, emoji: '🎄', name: 'Julafton' },
+    { month: 12, day: 31, emoji: '🎆', name: 'Nyårsafton' }
+  ];
+
+  var FIXED_RANGE_HOLIDAYS = [
+    { startMonth: 4, startDay: 13, endMonth: 4, endDay: 15, emoji: '💦', name: 'Songkran' },
+    { startMonth: 6, startDay: 19, endMonth: 6, endDay: 25, emoji: '🌼', name: 'Midsommar' },
+    { startMonth: 12, startDay: 25, endMonth: 12, endDay: 26, emoji: '🎁', name: 'Jul- och annandag' }
+  ];
+
+  // Best-effort estimates — double-check against an official Thai calendar.
+  var LUNAR_HOLIDAYS = {
+    2024: { makha: '2024-02-24', visakha: '2024-05-22', loy: '2024-11-15' },
+    2025: { makha: '2025-02-12', visakha: '2025-05-11', loy: '2025-11-05' },
+    2026: { makha: '2026-03-03', visakha: '2026-05-30', loy: '2026-11-24' },
+    2027: { makha: '2027-02-21', visakha: '2027-05-20', loy: '2027-11-14' },
+    2028: { makha: '2028-02-10', visakha: '2028-05-08', loy: '2028-11-02' }
+  };
+
+  function computeEaster(year) {
+    var a = year % 19, b = Math.floor(year / 100), c = year % 100;
+    var d = Math.floor(b / 4), e = b % 4;
+    var f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3);
+    var h = (19 * a + b - d - g + 15) % 30;
+    var i = Math.floor(c / 4), k = c % 4;
+    var l = (32 + 2 * e + 2 * i - h - k) % 7;
+    var m = Math.floor((a + 11 * h + 22 * l) / 451);
+    var month = Math.floor((h + l - 7 * m + 114) / 31);
+    var day = ((h + l - 7 * m + 114) % 31) + 1;
+    return new Date(year, month - 1, day);
+  }
+
+  function adventSundays(year) {
+    var dec24 = new Date(year, 11, 24);
+    var fourth = new Date(dec24);
+    fourth.setDate(dec24.getDate() - dec24.getDay());
+    var sundays = [];
+    for (var i = 0; i < 4; i++) {
+      var d = new Date(fourth);
+      d.setDate(fourth.getDate() - (3 - i) * 7);
+      sundays.push(d);
+    }
+    return sundays;
+  }
+
+  function getHolidaysForDate(date) {
+    var year = date.getFullYear(), month = date.getMonth() + 1, day = date.getDate();
+    var key = dayKey(date);
+    var matches = [];
+
+    FIXED_HOLIDAYS.forEach(function (h) {
+      if (h.month === month && h.day === day) matches.push({ emoji: h.emoji, name: h.name });
+    });
+
+    FIXED_RANGE_HOLIDAYS.forEach(function (h) {
+      var start = new Date(year, h.startMonth - 1, h.startDay);
+      var end = new Date(year, h.endMonth - 1, h.endDay);
+      if (date >= start && date <= end) matches.push({ emoji: h.emoji, name: h.name });
+    });
+
+    var easter = computeEaster(year);
+    if (dayKey(easter) === key) matches.push({ emoji: '🐣', name: 'Påsk' });
+    var ascension = new Date(easter); ascension.setDate(easter.getDate() + 39);
+    if (dayKey(ascension) === key) matches.push({ emoji: '🕊️', name: 'Kristi himmelsfärd' });
+    var pentecost = new Date(easter); pentecost.setDate(easter.getDate() + 49);
+    if (dayKey(pentecost) === key) matches.push({ emoji: '🕊️', name: 'Pingst' });
+
+    adventSundays(year).forEach(function (d, idx) {
+      if (dayKey(d) === key) {
+        var labels = ['Första', 'Andra', 'Tredje', 'Fjärde'];
+        matches.push({ emoji: '🕯️', name: labels[idx] + ' advent' });
+      }
+    });
+
+    var lunar = LUNAR_HOLIDAYS[year];
+    if (lunar) {
+      if (lunar.makha === key) matches.push({ emoji: '🪷', name: 'Makha Bucha' });
+      if (lunar.visakha === key) matches.push({ emoji: '🪷', name: 'Visakha Bucha' });
+      if (lunar.loy === key) matches.push({ emoji: '🏮', name: 'Loy Krathong' });
+    }
+
+    return matches;
+  }
+
+  function holidayLabelSuffix(date) {
+    var holidays = getHolidaysForDate(date);
+    if (holidays.length === 0) return '';
+    return ' ' + holidays.map(function (h) { return h.emoji + ' ' + h.name; }).join(' · ');
   }
 
   function groupByDay() {
@@ -998,7 +1114,7 @@
     analysisView.hidden = true;
     if (analysisBtn) analysisBtn.classList.remove('primary');
 
-    document.getElementById('todayLabel').textContent = headerLabel();
+    document.getElementById('todayLabel').textContent = headerLabel() + holidayLabelSuffix(new Date());
     var todaysTotal = state.entries.filter(function (e) { return e.date === todayKey() && !e.bucket; })
       .reduce(function (sum, e) { return sum + e.amount; }, 0);
     document.getElementById('heroAmount').textContent = formatMoney(todaysTotal);
