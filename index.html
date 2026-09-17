@@ -416,7 +416,7 @@
   var NEW_CATEGORIES_V2 = ['Take-away', 'Fika', 'Kläder'];
   var DEFAULT_CATEGORIES = ['Mat', 'Transport', 'Nöje', 'Räkningar', 'Övrigt', 'Take-away', 'Fika', 'Kläder'];
   var UNCATEGORIZED = 'Okategoriserad';
-  var APP_VERSION = '1.6';
+  var APP_VERSION = '1.7';
   var state = {
     entries: [], allowance: null, categories: [], monthStartDay: 1, view: 'history',
     savingsGoals: [], badges: []
@@ -763,6 +763,17 @@
     return { start: start, end: end };
   }
 
+  function goalRangeDays(range) {
+    var start = new Date(range.start + 'T00:00:00');
+    var end = new Date(range.end + 'T00:00:00');
+    return Math.round((end - start) / 86400000) + 1;
+  }
+
+  function goalSavedAmount(range) {
+    var spent = periodTotal(entriesInDateRange(range.start, range.end));
+    return state.allowance * goalRangeDays(range) - spent;
+  }
+
   function formatDateRangeLabel(startKey, endKey) {
     var startLabel = new Date(startKey + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
     if (!endKey) return 'since ' + startLabel;
@@ -808,13 +819,15 @@
       }
     }
 
-    state.savingsGoals.forEach(function (g, idx) {
-      var range = goalEffectiveRange(g, idx, state.savingsGoals);
-      if (range.end < todayKey()) {
-        var items = entriesInDateRange(range.start, range.end);
-        if (items.length > 0 && periodTotal(items) <= g.amount) unlock('goalMet');
-      }
-    });
+    if (state.allowance !== null && !isNaN(state.allowance)) {
+      state.savingsGoals.forEach(function (g, idx) {
+        var range = goalEffectiveRange(g, idx, state.savingsGoals);
+        if (range.end < todayKey()) {
+          var items = entriesInDateRange(range.start, range.end);
+          if (items.length > 0 && goalSavedAmount(range) >= g.amount) unlock('goalMet');
+        }
+      });
+    }
 
     if (changed) { state.badges = earned; saveBadges(); }
   }
@@ -849,18 +862,22 @@
     if (activeGoalIdx !== -1) {
       var activeGoal = state.savingsGoals[activeGoalIdx];
       var activeRange = goalEffectiveRange(activeGoal, activeGoalIdx, state.savingsGoals);
-      var activeGoalItems = entriesInDateRange(activeRange.start, activeRange.end);
-      var activeGoalTotal = periodTotal(activeGoalItems);
-      var activeGoalMet = activeGoalTotal <= activeGoal.amount;
-      var activeGoalPct = Math.min(100, Math.round(Math.max(0, activeGoalTotal) / activeGoal.amount * 100));
       var activeGoalDateLabel = formatDateRangeLabel(activeRange.start, activeGoal.endDate ? activeRange.end : null);
-      html += '<div class="goal-block">' +
-        '<div class="goal-row-top"><span class="goal-label">' + (activeGoalMet ? capybaraSvg('crown', 18) : '') +
-        ' Savings goal <span class="goal-dates">(' + activeGoalDateLabel + ')</span></span>' +
-        '<span class="goal-amt">' + formatMoney(activeGoalTotal) + ' / ' + formatMoney(activeGoal.amount) + '</span></div>' +
-        '<div class="cat-bar"><div class="cat-bar-fill' + (activeGoalMet ? '' : ' over') + '" style="width:' + activeGoalPct + '%"></div></div>' +
-        (activeGoalMet && activeGoal.note ? '<p class="hint" style="margin-top:6px;">' + activeGoal.note.replace(/</g, '&lt;') + '</p>' : '') +
-        '</div>';
+      html += '<div class="goal-block">';
+      if (!hasAllowance) {
+        html += '<div class="goal-row-top"><span class="goal-label">Savings goal <span class="goal-dates">(' + activeGoalDateLabel + ')</span></span></div>' +
+          '<p class="hint">Set a daily allowance to start saving toward this goal.</p>';
+      } else {
+        var activeSaved = goalSavedAmount(activeRange);
+        var activeGoalMet = activeSaved >= activeGoal.amount;
+        var activeGoalPct = Math.max(0, Math.min(100, Math.round(activeSaved / activeGoal.amount * 100)));
+        html += '<div class="goal-row-top"><span class="goal-label">' + (activeGoalMet ? capybaraSvg('crown', 18) : '') +
+          ' Savings goal <span class="goal-dates">(' + activeGoalDateLabel + ')</span></span>' +
+          '<span class="goal-amt">' + (activeSaved >= 0 ? formatMoney(activeSaved) + ' saved' : formatMoney(Math.abs(activeSaved)) + ' over pace') + '</span></div>' +
+          '<div class="cat-bar"><div class="cat-bar-fill' + (activeGoalMet ? '' : ' over') + '" style="width:' + (activeSaved >= 0 ? activeGoalPct : 100) + '%"></div></div>' +
+          '<p class="hint" style="margin-top:6px;">Goal: ' + formatMoney(activeGoal.amount) + (activeGoalMet && activeGoal.note ? ' — ' + activeGoal.note.replace(/</g, '&lt;') : '') + '</p>';
+      }
+      html += '</div>';
     }
 
     html += '<div class="period-nav">' +
@@ -1293,22 +1310,26 @@
         return;
       }
       var activeIdx = getActiveGoalIndex();
+      var hasAllowance = state.allowance !== null && !isNaN(state.allowance);
       var html = '';
       for (var i = goals.length - 1; i >= 0; i--) {
         var g = goals[i];
         var range = goalEffectiveRange(g, i, goals);
-        var items = entriesInDateRange(range.start, range.end);
-        var total = periodTotal(items);
-        var met = total <= g.amount;
         var isActive = i === activeIdx;
         var dateLabel = formatDateRangeLabel(range.start, (isActive && !g.endDate) ? null : range.end);
         html += '<div class="goal-history-row">' +
           '<button type="button" class="goal-del" data-idx="' + i + '" aria-label="Delete goal">×</button>' +
-          '<div class="goal-row-top"><span class="goal-label">' + (isActive ? '<strong>Active</strong> — ' : '') + dateLabel + '</span>' +
-          '<span class="goal-amt">' + formatMoney(total) + ' / ' + formatMoney(g.amount) + '</span></div>' +
-          '<div class="cat-bar"><div class="cat-bar-fill' + (met ? '' : ' over') + '" style="width:' + Math.min(100, Math.round(Math.max(0, total) / g.amount * 100)) + '%"></div></div>' +
-          (met && g.note ? '<p class="hint" style="margin:4px 0 0;">' + g.note.replace(/</g, '&lt;') + '</p>' : '') +
-          '</div>';
+          '<div class="goal-row-top"><span class="goal-label">' + (isActive ? '<strong>Active</strong> — ' : '') + dateLabel + '</span>';
+        if (!hasAllowance) {
+          html += '</div><p class="hint">Set a daily allowance to track savings.</p></div>';
+        } else {
+          var saved = goalSavedAmount(range);
+          var met = saved >= g.amount;
+          var pct = Math.max(0, Math.min(100, Math.round(saved / g.amount * 100)));
+          html += '<span class="goal-amt">' + (saved >= 0 ? formatMoney(saved) + ' saved' : formatMoney(Math.abs(saved)) + ' over pace') + '</span></div>' +
+            '<div class="cat-bar"><div class="cat-bar-fill' + (met ? '' : ' over') + '" style="width:' + (saved >= 0 ? pct : 100) + '%"></div></div>' +
+            '<p class="hint" style="margin:4px 0 0;">Goal: ' + formatMoney(g.amount) + (met && g.note ? ' — ' + g.note.replace(/</g, '&lt;') : '') + '</p></div>';
+        }
       }
       listEl.innerHTML = html;
       listEl.querySelectorAll('.goal-del').forEach(function (btn) {
