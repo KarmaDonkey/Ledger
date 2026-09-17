@@ -323,8 +323,18 @@
   .goal-block { margin: 4px 0 18px; }
   .goal-row-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; gap: 10px; }
   .goal-label { display: flex; align-items: center; gap: 6px; font-size: 14px; }
+  .goal-dates { font-size: 12px; color: var(--ink-faint); font-weight: 400; }
   .goal-amt { font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: var(--ink-soft); white-space: nowrap; }
   .cat-bar-fill.over { background: var(--over); }
+
+  .goal-date-row { display: flex; gap: 10px; }
+  .goal-date-row > div { flex: 1; }
+  .goal-history-row { position: relative; padding: 12px 22px 12px 0; border-bottom: 1px solid var(--hairline); }
+  .goal-history-row:last-child { border-bottom: none; }
+  .goal-del {
+    position: absolute; top: 10px; right: 0; background: none; border: none;
+    color: var(--ink-faint); font-size: 18px; line-height: 1; cursor: pointer; padding: 2px 4px;
+  }
 
   .badge-row { display: flex; gap: 12px; }
   .badge-item {
@@ -379,15 +389,16 @@
   var CATEGORIES_KEY = 'ledger.categories.v1';
   var MONTH_START_KEY = 'ledger.monthStartDay.v1';
   var SAVINGS_GOAL_KEY = 'ledger.savingsGoal.v1';
+  var SAVINGS_GOALS_KEY = 'ledger.savingsGoals.v1';
   var BADGES_KEY = 'ledger.badges.v1';
   var CATEGORY_MIGRATION_KEY = 'ledger.categoriesMigrationV2.v1';
   var NEW_CATEGORIES_V2 = ['Take-away', 'Fika', 'Kläder'];
   var DEFAULT_CATEGORIES = ['Mat', 'Transport', 'Nöje', 'Räkningar', 'Övrigt', 'Take-away', 'Fika', 'Kläder'];
   var UNCATEGORIZED = 'Okategoriserad';
-  var APP_VERSION = '1.4';
+  var APP_VERSION = '1.5';
   var state = {
     entries: [], allowance: null, categories: [], monthStartDay: 1, view: 'history',
-    savingsGoal: { amount: null, note: '' }, badges: []
+    savingsGoals: [], badges: []
   };
   var storageStatus = { ok: null, lastSaved: null };
   var analysisState = { periodType: 'month', anchor: new Date(), mode: 'total', drillCategory: null };
@@ -430,9 +441,31 @@
       if (isNaN(state.monthStartDay) || state.monthStartDay < 1 || state.monthStartDay > 31) state.monthStartDay = 1;
     } catch (e) { state.monthStartDay = 1; }
     try {
-      var rawGoal = localStorage.getItem(SAVINGS_GOAL_KEY);
-      state.savingsGoal = rawGoal ? JSON.parse(rawGoal) : { amount: null, note: '' };
-    } catch (e) { state.savingsGoal = { amount: null, note: '' }; }
+      var rawGoals = localStorage.getItem(SAVINGS_GOALS_KEY);
+      if (rawGoals) {
+        state.savingsGoals = JSON.parse(rawGoals);
+      } else {
+        state.savingsGoals = [];
+        try {
+          var rawOldGoal = localStorage.getItem(SAVINGS_GOAL_KEY);
+          if (rawOldGoal) {
+            var oldGoal = JSON.parse(rawOldGoal);
+            if (oldGoal && oldGoal.amount !== null && !isNaN(oldGoal.amount)) {
+              var migStart = getMonthPeriod(new Date(), state.monthStartDay).start;
+              state.savingsGoals.push({
+                id: 'migrated-' + Date.now().toString(36),
+                amount: oldGoal.amount,
+                note: oldGoal.note || '',
+                startDate: dayKey(migStart),
+                endDate: null,
+                createdAt: Date.now()
+              });
+              saveSavingsGoals();
+            }
+          }
+        } catch (e2) {}
+      }
+    } catch (e) { state.savingsGoals = []; }
     try {
       var rawBadges = localStorage.getItem(BADGES_KEY);
       state.badges = rawBadges ? JSON.parse(rawBadges) : [];
@@ -485,9 +518,9 @@
     } catch (e) { storageStatus.ok = false; }
   }
 
-  function saveSavingsGoal() {
+  function saveSavingsGoals() {
     try {
-      localStorage.setItem(SAVINGS_GOAL_KEY, JSON.stringify(state.savingsGoal));
+      localStorage.setItem(SAVINGS_GOALS_KEY, JSON.stringify(state.savingsGoals));
       storageStatus.ok = true;
       storageStatus.lastSaved = Date.now();
       try { localStorage.setItem(LAST_SAVED_KEY, String(storageStatus.lastSaved)); } catch (e2) {}
@@ -671,6 +704,42 @@
     return streak;
   }
 
+  function entriesInDateRange(startKey, endKey) {
+    return state.entries.filter(function (e) { return e.date >= startKey && e.date <= endKey; });
+  }
+
+  function getActiveGoalIndex() {
+    var today = todayKey();
+    for (var i = state.savingsGoals.length - 1; i >= 0; i--) {
+      if (state.savingsGoals[i].startDate <= today) return i;
+    }
+    return -1;
+  }
+
+  function goalEffectiveRange(goal, index, goalsArr) {
+    var start = goal.startDate;
+    var end;
+    var next = goalsArr[index + 1];
+    if (goal.endDate) {
+      end = goal.endDate;
+    } else if (next) {
+      var d = new Date(next.startDate + 'T00:00:00');
+      d.setDate(d.getDate() - 1);
+      end = dayKey(d);
+    } else {
+      end = todayKey();
+    }
+    if (end > todayKey()) end = todayKey();
+    return { start: start, end: end };
+  }
+
+  function formatDateRangeLabel(startKey, endKey) {
+    var startLabel = new Date(startKey + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    if (!endKey) return 'since ' + startLabel;
+    var endLabel = new Date(endKey + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    return startLabel + ' – ' + endLabel;
+  }
+
   function updateStreakBadge() {
     var el = document.getElementById('streakBadge');
     if (!el) return;
@@ -696,10 +765,16 @@
         var prevTotal = periodTotal(prevItems);
         var prevDays = Math.round((prevPeriod.end - prevPeriod.start) / 86400000) + 1;
         if (prevTotal <= state.allowance * prevDays) unlock('monthUnderBudget');
-        if (state.savingsGoal && state.savingsGoal.amount !== null && !isNaN(state.savingsGoal.amount) &&
-          prevTotal <= state.savingsGoal.amount) unlock('goalMet');
       }
     }
+
+    state.savingsGoals.forEach(function (g, idx) {
+      var range = goalEffectiveRange(g, idx, state.savingsGoals);
+      if (range.end < todayKey()) {
+        var items = entriesInDateRange(range.start, range.end);
+        if (items.length > 0 && periodTotal(items) <= g.amount) unlock('goalMet');
+      }
+    });
 
     if (changed) { state.badges = earned; saveBadges(); }
   }
@@ -730,6 +805,24 @@
         return '<button type="button" class="type-btn' + (t === type ? ' active' : '') + '" data-type="' + t + '">' + lbl + '</button>';
       }).join('') + '</div>';
 
+    var activeGoalIdx = getActiveGoalIndex();
+    if (activeGoalIdx !== -1) {
+      var activeGoal = state.savingsGoals[activeGoalIdx];
+      var activeRange = goalEffectiveRange(activeGoal, activeGoalIdx, state.savingsGoals);
+      var activeGoalItems = entriesInDateRange(activeRange.start, activeRange.end);
+      var activeGoalTotal = periodTotal(activeGoalItems);
+      var activeGoalMet = activeGoalTotal <= activeGoal.amount;
+      var activeGoalPct = Math.min(100, Math.round(Math.max(0, activeGoalTotal) / activeGoal.amount * 100));
+      var activeGoalDateLabel = formatDateRangeLabel(activeRange.start, activeGoal.endDate ? activeRange.end : null);
+      html += '<div class="goal-block">' +
+        '<div class="goal-row-top"><span class="goal-label">' + (activeGoalMet ? capybaraSvg('crown', 18) : '') +
+        ' Savings goal <span class="goal-dates">(' + activeGoalDateLabel + ')</span></span>' +
+        '<span class="goal-amt">' + formatMoney(activeGoalTotal) + ' / ' + formatMoney(activeGoal.amount) + '</span></div>' +
+        '<div class="cat-bar"><div class="cat-bar-fill' + (activeGoalMet ? '' : ' over') + '" style="width:' + activeGoalPct + '%"></div></div>' +
+        (activeGoalMet && activeGoal.note ? '<p class="hint" style="margin-top:6px;">' + activeGoal.note.replace(/</g, '&lt;') + '</p>' : '') +
+        '</div>';
+    }
+
     html += '<div class="period-nav">' +
       '<button type="button" class="icon-btn" id="periodPrev" aria-label="Previous period">‹</button>' +
       '<span class="period-label">' + formatPeriodLabel(type, period) + '</span>' +
@@ -753,18 +846,6 @@
       html += '<div class="type-toggle" id="modeToggle" style="margin-bottom:16px;">' +
         '<button type="button" class="type-btn' + (mode === 'total' ? ' active' : '') + '" data-mode="total">Total</button>' +
         '<button type="button" class="type-btn' + (mode === 'average' ? ' active' : '') + '" data-mode="average">Avg / day</button>' +
-        '</div>';
-    }
-
-    if (type === 'month' && state.savingsGoal && state.savingsGoal.amount !== null && !isNaN(state.savingsGoal.amount)) {
-      var goalAmt = state.savingsGoal.amount;
-      var goalPct = Math.min(100, Math.round(Math.max(0, total) / goalAmt * 100));
-      var goalMet = total <= goalAmt;
-      html += '<div class="goal-block">' +
-        '<div class="goal-row-top"><span class="goal-label">' + (goalMet ? capybaraSvg('crown', 18) : '') + ' Savings goal</span>' +
-        '<span class="goal-amt">' + formatMoney(total) + ' / ' + formatMoney(goalAmt) + '</span></div>' +
-        '<div class="cat-bar"><div class="cat-bar-fill' + (goalMet ? '' : ' over') + '" style="width:' + goalPct + '%"></div></div>' +
-        (goalMet && state.savingsGoal.note ? '<p class="hint" style="margin-top:6px;">' + state.savingsGoal.note.replace(/</g, '&lt;') + '</p>' : '') +
         '</div>';
     }
 
@@ -1150,28 +1231,98 @@
   }
 
   function savingsGoalMarkup() {
-    var amt = state.savingsGoal && state.savingsGoal.amount !== null && !isNaN(state.savingsGoal.amount) ? state.savingsGoal.amount : '';
-    var note = state.savingsGoal && state.savingsGoal.note ? state.savingsGoal.note : '';
-    return '<div class="field"><label for="goalAmountInput">Monthly savings goal (optional)</label>' +
-      '<input type="text" inputmode="decimal" id="goalAmountInput" class="mono-input" placeholder="e.g. 6000" autocomplete="off" value="' + amt + '">' +
-      '<p class="hint">Compared against the Month total in Analysis. Leave blank for no goal.</p></div>' +
+    return '<div class="field"><label for="goalAmountInput">New savings goal amount (optional)</label>' +
+      '<input type="text" inputmode="decimal" id="goalAmountInput" class="mono-input" placeholder="e.g. 6000" autocomplete="off"></div>' +
+      '<div class="field goal-date-row">' +
+      '<div><label for="goalStartInput">Start</label><input type="date" id="goalStartInput" value="' + todayKey() + '"></div>' +
+      '<div><label for="goalEndInput">End (optional)</label><input type="date" id="goalEndInput"></div>' +
+      '</div>' +
+      '<p class="hint" style="margin:-6px 0 12px;">Leave End blank for a goal with no end date.</p>' +
       '<div class="field"><label for="goalNoteInput">Reward if you hit it (optional)</label>' +
-      '<input type="text" id="goalNoteInput" placeholder="e.g. Movie night" autocomplete="off" value="' + note.replace(/"/g, '&quot;') + '"></div>';
+      '<input type="text" id="goalNoteInput" placeholder="e.g. Movie night" autocomplete="off"></div>' +
+      '<button type="button" class="btn btn-secondary" id="addGoalBtn" style="width:100%;margin-bottom:16px;">Start this goal</button>' +
+      '<div class="field"><label>Savings goal history</label><div id="goalHistoryList"></div></div>';
   }
 
-  function badgesMarkup() {
+  function bindSavingsGoal() {
+    function renderHistory() {
+      var listEl = document.getElementById('goalHistoryList');
+      var goals = state.savingsGoals;
+      if (goals.length === 0) {
+        listEl.innerHTML = '<p class="hint">No goals yet.</p>';
+        return;
+      }
+      var activeIdx = getActiveGoalIndex();
+      var html = '';
+      for (var i = goals.length - 1; i >= 0; i--) {
+        var g = goals[i];
+        var range = goalEffectiveRange(g, i, goals);
+        var items = entriesInDateRange(range.start, range.end);
+        var total = periodTotal(items);
+        var met = total <= g.amount;
+        var isActive = i === activeIdx;
+        var dateLabel = formatDateRangeLabel(range.start, (isActive && !g.endDate) ? null : range.end);
+        html += '<div class="goal-history-row">' +
+          '<button type="button" class="goal-del" data-idx="' + i + '" aria-label="Delete goal">×</button>' +
+          '<div class="goal-row-top"><span class="goal-label">' + (isActive ? '<strong>Active</strong> — ' : '') + dateLabel + '</span>' +
+          '<span class="goal-amt">' + formatMoney(total) + ' / ' + formatMoney(g.amount) + '</span></div>' +
+          '<div class="cat-bar"><div class="cat-bar-fill' + (met ? '' : ' over') + '" style="width:' + Math.min(100, Math.round(Math.max(0, total) / g.amount * 100)) + '%"></div></div>' +
+          (met && g.note ? '<p class="hint" style="margin:4px 0 0;">' + g.note.replace(/</g, '&lt;') + '</p>' : '') +
+          '</div>';
+      }
+      listEl.innerHTML = html;
+      listEl.querySelectorAll('.goal-del').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          state.savingsGoals.splice(+btn.dataset.idx, 1);
+          saveSavingsGoals();
+          checkBadges();
+          refreshBadgeRow();
+          renderHistory();
+        });
+      });
+    }
+    renderHistory();
+    document.getElementById('addGoalBtn').addEventListener('click', function () {
+      var raw = document.getElementById('goalAmountInput').value.replace(',', '.').trim();
+      var amount = parseFloat(raw);
+      if (isNaN(amount) || amount <= 0) { document.getElementById('goalAmountInput').focus(); return; }
+      var start = document.getElementById('goalStartInput').value || todayKey();
+      var end = document.getElementById('goalEndInput').value || null;
+      var note = document.getElementById('goalNoteInput').value.trim();
+      state.savingsGoals.push({
+        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+        amount: Math.round(amount * 100) / 100, note: note, startDate: start, endDate: end, createdAt: Date.now()
+      });
+      saveSavingsGoals();
+      checkBadges();
+      refreshBadgeRow();
+      document.getElementById('goalAmountInput').value = '';
+      document.getElementById('goalNoteInput').value = '';
+      document.getElementById('goalStartInput').value = todayKey();
+      document.getElementById('goalEndInput').value = '';
+      renderHistory();
+    });
+  }
+
+  function badgeRowHtml() {
     var defs = [
       { id: 'monthUnderBudget', variant: 'plain', label: 'A full month under budget' },
       { id: 'streak7', variant: 'sunglasses', label: '7-day streak' },
       { id: 'goalMet', variant: 'crown', label: 'Savings goal met' }
     ];
-    var html = '<div class="field"><label>Achievements</label><div class="badge-row">';
-    defs.forEach(function (d) {
+    return defs.map(function (d) {
       var earned = state.badges.indexOf(d.id) !== -1;
-      html += '<div class="badge-item' + (earned ? '' : ' badge-locked') + '">' + capybaraSvg(d.variant, 34) + '<span>' + d.label + '</span></div>';
-    });
-    html += '</div></div>';
-    return html;
+      return '<div class="badge-item' + (earned ? '' : ' badge-locked') + '">' + capybaraSvg(d.variant, 34) + '<span>' + d.label + '</span></div>';
+    }).join('');
+  }
+
+  function badgesMarkup() {
+    return '<div class="field"><label>Achievements</label><div class="badge-row" id="badgeRow">' + badgeRowHtml() + '</div></div>';
+  }
+
+  function refreshBadgeRow() {
+    var el = document.getElementById('badgeRow');
+    if (el) el.innerHTML = badgeRowHtml();
   }
 
   function categoriesManageMarkup() {
@@ -1259,17 +1410,12 @@
         state.monthStartDay = Math.min(31, Math.max(1, startRaw));
         saveMonthStartDay();
       }
-      var goalRaw = document.getElementById('goalAmountInput').value.replace(',', '.').trim();
-      var goalNote = document.getElementById('goalNoteInput').value.trim();
-      var goalAmount = goalRaw === '' ? null : parseFloat(goalRaw);
-      if (goalAmount !== null && (isNaN(goalAmount) || goalAmount < 0)) goalAmount = null;
-      state.savingsGoal = { amount: goalAmount, note: goalNote };
-      saveSavingsGoal();
       closePanel();
       render();
     });
     document.getElementById('exportCsvBtn').addEventListener('click', downloadCsv);
     bindCategoryManage();
+    bindSavingsGoal();
   }
 
   function scanIntroMarkup() {
