@@ -516,7 +516,7 @@
     if (pct >= 60) return 'sunglasses';
     return 'plain';
   }
-  var APP_VERSION = '2.1';
+  var APP_VERSION = '2.2';
   var state = {
     entries: [], allowance: null, categories: [], monthStartDay: 1, view: 'history',
     buckets: { trackingStart: null, everydayTarget: null, funTarget: null, funNote: '' }, badges: []
@@ -789,13 +789,32 @@
       if (lunar.loy === key) matches.push({ emoji: '🏮', name: 'Loy Krathong' });
     }
 
+    if (day === 13 && date.getDay() === 5) matches.push({ icon: 'hockeyMask', name: 'Fredagen den 13:e' });
+
     return matches;
+  }
+
+  // No emoji for a hockey mask exists, so Friday the 13th gets a small
+  // custom inline icon instead of the usual emoji.
+  function hockeyMaskSvg(size) {
+    size = size || 14;
+    return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" style="vertical-align:-2px;">' +
+      '<path d="M12 2C6 2 3 6 3 11c0 6 4 10 9 10s9-4 9-10c0-5-3-9-9-9Z" fill="#EDE6D8" stroke="#8B7E68" stroke-width="0.8"/>' +
+      '<ellipse cx="8.3" cy="10.5" rx="1.6" ry="2.2" fill="#2A2620"/>' +
+      '<ellipse cx="15.7" cy="10.5" rx="1.6" ry="2.2" fill="#2A2620"/>' +
+      '<path d="M12 12.5 L10.3 16 L13.7 16 Z" fill="#2A2620"/>' +
+      '<path d="M4.5 8 L9 13" stroke="#B23A2E" stroke-width="1.4" stroke-linecap="round"/>' +
+      '<path d="M15 6 L20 12" stroke="#B23A2E" stroke-width="1.4" stroke-linecap="round"/>' +
+      '<path d="M9 17 L15 20" stroke="#B23A2E" stroke-width="1.4" stroke-linecap="round"/>' +
+      '</svg>';
   }
 
   function holidayLabelSuffix(date) {
     var holidays = getHolidaysForDate(date);
     if (holidays.length === 0) return '';
-    return ' ' + holidays.map(function (h) { return h.emoji + ' ' + h.name; }).join(' · ');
+    return ' ' + holidays.map(function (h) {
+      return (h.icon === 'hockeyMask' ? hockeyMaskSvg(14) : h.emoji) + ' ' + h.name;
+    }).join(' · ');
   }
 
   function groupByDay() {
@@ -1220,7 +1239,7 @@
     analysisView.hidden = true;
     if (analysisBtn) analysisBtn.classList.remove('primary');
 
-    document.getElementById('todayLabel').textContent = headerLabel() + holidayLabelSuffix(new Date());
+    document.getElementById('todayLabel').innerHTML = headerLabel() + holidayLabelSuffix(new Date());
     var todaysTotal = state.entries.filter(function (e) { return e.date === todayKey() && !e.bucket; })
       .reduce(function (sum, e) { return sum + e.amount; }, 0);
     document.getElementById('heroAmount').textContent = formatMoney(todaysTotal);
