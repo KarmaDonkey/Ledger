@@ -504,6 +504,8 @@
   var MONTH_START_KEY = 'ledger.monthStartDay.v1';
   var BUCKETS_KEY = 'ledger.buckets.v1';
   var BADGES_KEY = 'ledger.badges.v1';
+  var DELETED_IDS_KEY = 'ledger.deletedIds.v1';
+  var ONEDRIVE_KEY = 'ledger.onedrive.v1';
   var CATEGORY_MIGRATION_KEY = 'ledger.categoriesMigrationV2.v1';
   var NEW_CATEGORIES_V2 = ['Take-away', 'Fika', 'Kläder'];
   var DEFAULT_CATEGORIES = ['Mat', 'Transport', 'Nöje', 'Räkningar', 'Övrigt', 'Take-away', 'Fika', 'Kläder'];
@@ -516,10 +518,17 @@
     if (pct >= 60) return 'sunglasses';
     return 'plain';
   }
-  var APP_VERSION = '2.2';
+  var APP_VERSION = '2.3';
   var state = {
     entries: [], allowance: null, categories: [], monthStartDay: 1, view: 'history',
-    buckets: { trackingStart: null, everydayTarget: null, funTarget: null, funNote: '' }, badges: []
+    buckets: { trackingStart: null, everydayTarget: null, funTarget: null, funNote: '' }, badges: [],
+    deletedIds: []
+  };
+  // Shared with (OneDrive): clientId/refreshToken/remoteRef/lastSyncedAt/lastEtag/accountLabel
+  // persist to ONEDRIVE_KEY; accessToken/accessTokenExpiry/syncing/lastError are runtime-only.
+  var oneDrive = {
+    clientId: null, refreshToken: null, remoteRef: null, lastSyncedAt: null, lastEtag: null, accountLabel: null,
+    accessToken: null, accessTokenExpiry: 0, syncing: false, lastError: null
   };
   var storageStatus = { ok: null, lastSaved: null };
   var analysisState = { periodType: 'month', anchor: new Date(), mode: 'total', drillCategory: null };
@@ -571,6 +580,22 @@
       var rawBadges = localStorage.getItem(BADGES_KEY);
       state.badges = rawBadges ? JSON.parse(rawBadges) : [];
     } catch (e) { state.badges = []; }
+    try {
+      var rawDeleted = localStorage.getItem(DELETED_IDS_KEY);
+      state.deletedIds = rawDeleted ? JSON.parse(rawDeleted) : [];
+    } catch (e) { state.deletedIds = []; }
+    try {
+      var rawOneDrive = localStorage.getItem(ONEDRIVE_KEY);
+      var od = rawOneDrive ? JSON.parse(rawOneDrive) : null;
+      if (od) {
+        oneDrive.clientId = od.clientId || null;
+        oneDrive.refreshToken = od.refreshToken || null;
+        oneDrive.remoteRef = od.remoteRef || null;
+        oneDrive.lastSyncedAt = od.lastSyncedAt || null;
+        oneDrive.lastEtag = od.lastEtag || null;
+        oneDrive.accountLabel = od.accountLabel || null;
+      }
+    } catch (e) {}
     try {
       if (!localStorage.getItem(CATEGORY_MIGRATION_KEY)) {
         var addedNewCategory = false;
@@ -635,6 +660,332 @@
       storageStatus.lastSaved = Date.now();
       try { localStorage.setItem(LAST_SAVED_KEY, String(storageStatus.lastSaved)); } catch (e2) {}
     } catch (e) { storageStatus.ok = false; }
+  }
+
+  function saveDeletedIds() {
+    try { localStorage.setItem(DELETED_IDS_KEY, JSON.stringify(state.deletedIds)); } catch (e) {}
+  }
+
+  function saveOneDriveConfig() {
+    try {
+      localStorage.setItem(ONEDRIVE_KEY, JSON.stringify({
+        clientId: oneDrive.clientId,
+        refreshToken: oneDrive.refreshToken,
+        remoteRef: oneDrive.remoteRef,
+        lastSyncedAt: oneDrive.lastSyncedAt,
+        lastEtag: oneDrive.lastEtag,
+        accountLabel: oneDrive.accountLabel
+      }));
+    } catch (e) {}
+  }
+
+  // ---------------------------------------------------------------
+  // Sharing with OneDrive: a "Ledger" folder in one person's OneDrive
+  // holds entries.json; the other person accesses it via a normal
+  // OneDrive share invite. No backend — the app talks to Microsoft's
+  // login and Graph API directly using OAuth 2.0 + PKCE (a public
+  // client flow that needs no server-held secret), scoped to personal
+  // Microsoft accounts only ("consumers"). Since OneDrive is file-based
+  // rather than a real database, entries carry an `updatedAt` stamp and
+  // deletions are tracked as tombstones so two devices merge safely
+  // instead of overwriting each other's changes.
+  // ---------------------------------------------------------------
+  var ONEDRIVE_AUTHORITY = 'https://login.microsoftonline.com/consumers';
+  var ONEDRIVE_SCOPES = 'Files.ReadWrite offline_access User.Read';
+  var GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
+  var TOMBSTONE_MAX_AGE_MS = 180 * 86400000;
+  var syncDebounceTimer = null;
+
+  function oneDriveRedirectUri() { return window.location.origin + window.location.pathname; }
+
+  function base64UrlEncode(buffer) {
+    var bytes = new Uint8Array(buffer);
+    var binary = '';
+    for (var i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+
+  function randomString(len) {
+    var arr = new Uint8Array(len);
+    crypto.getRandomValues(arr);
+    return base64UrlEncode(arr.buffer).slice(0, len);
+  }
+
+  async function pkceChallengeFromVerifier(verifier) {
+    var data = new TextEncoder().encode(verifier);
+    var digest = await crypto.subtle.digest('SHA-256', data);
+    return base64UrlEncode(digest);
+  }
+
+  async function startOneDriveLogin() {
+    if (!oneDrive.clientId) return;
+    var verifier = randomString(64);
+    var challenge = await pkceChallengeFromVerifier(verifier);
+    var loginState = randomString(24);
+    try {
+      sessionStorage.setItem('ledger.onedrive.pkce', verifier);
+      sessionStorage.setItem('ledger.onedrive.state', loginState);
+    } catch (e) {}
+    var params = new URLSearchParams({
+      client_id: oneDrive.clientId,
+      response_type: 'code',
+      redirect_uri: oneDriveRedirectUri(),
+      response_mode: 'query',
+      scope: ONEDRIVE_SCOPES,
+      code_challenge: challenge,
+      code_challenge_method: 'S256',
+      state: loginState
+    });
+    window.location.assign(ONEDRIVE_AUTHORITY + '/oauth2/v2.0/authorize?' + params.toString());
+  }
+
+  function applyTokenResponse(json) {
+    oneDrive.accessToken = json.access_token;
+    oneDrive.accessTokenExpiry = Date.now() + (json.expires_in ? json.expires_in * 1000 : 0) - 60000;
+    if (json.refresh_token) oneDrive.refreshToken = json.refresh_token;
+  }
+
+  async function handleOneDriveRedirect() {
+    var url = new URL(window.location.href);
+    var code = url.searchParams.get('code');
+    var returnedState = url.searchParams.get('state');
+    var authError = url.searchParams.get('error');
+    if (!code && !authError) return false;
+    url.searchParams.delete('code');
+    url.searchParams.delete('state');
+    url.searchParams.delete('session_state');
+    url.searchParams.delete('error');
+    url.searchParams.delete('error_description');
+    var qs = url.searchParams.toString();
+    window.history.replaceState({}, document.title, url.pathname + (qs ? '?' + qs : ''));
+    if (authError) { oneDrive.lastError = authError; return true; }
+    var expectedState = sessionStorage.getItem('ledger.onedrive.state');
+    var verifier = sessionStorage.getItem('ledger.onedrive.pkce');
+    try {
+      sessionStorage.removeItem('ledger.onedrive.state');
+      sessionStorage.removeItem('ledger.onedrive.pkce');
+    } catch (e) {}
+    if (!verifier || returnedState !== expectedState) { oneDrive.lastError = 'state_mismatch'; return true; }
+    try {
+      var body = new URLSearchParams({
+        client_id: oneDrive.clientId,
+        scope: ONEDRIVE_SCOPES,
+        code: code,
+        redirect_uri: oneDriveRedirectUri(),
+        grant_type: 'authorization_code',
+        code_verifier: verifier
+      });
+      var res = await fetch(ONEDRIVE_AUTHORITY + '/oauth2/v2.0/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body.toString()
+      });
+      var json = await res.json();
+      if (!res.ok) { oneDrive.lastError = json.error || 'token_error'; return true; }
+      applyTokenResponse(json);
+      saveOneDriveConfig();
+      await fetchAccountLabel();
+      saveOneDriveConfig();
+      await syncOneDrive();
+    } catch (e) { oneDrive.lastError = 'network'; }
+    return true;
+  }
+
+  async function getOneDriveAccessToken() {
+    if (oneDrive.accessToken && Date.now() < oneDrive.accessTokenExpiry) return oneDrive.accessToken;
+    if (!oneDrive.refreshToken || !oneDrive.clientId) return null;
+    try {
+      var body = new URLSearchParams({
+        client_id: oneDrive.clientId,
+        scope: ONEDRIVE_SCOPES,
+        refresh_token: oneDrive.refreshToken,
+        grant_type: 'refresh_token'
+      });
+      var res = await fetch(ONEDRIVE_AUTHORITY + '/oauth2/v2.0/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body.toString()
+      });
+      var json = await res.json();
+      if (!res.ok) {
+        oneDrive.lastError = json.error || 'refresh_error';
+        oneDrive.refreshToken = null;
+        saveOneDriveConfig();
+        return null;
+      }
+      applyTokenResponse(json);
+      saveOneDriveConfig();
+      return oneDrive.accessToken;
+    } catch (e) { oneDrive.lastError = 'network'; return null; }
+  }
+
+  function graphFetch(path, token, options) {
+    options = options || {};
+    var headers = Object.assign({}, options.headers || {}, { Authorization: 'Bearer ' + token });
+    return fetch(GRAPH_BASE + path, Object.assign({}, options, { headers: headers }));
+  }
+
+  async function fetchAccountLabel() {
+    var token = await getOneDriveAccessToken();
+    if (!token) return;
+    try {
+      var res = await graphFetch('/me', token);
+      if (res.ok) {
+        var me = await res.json();
+        oneDrive.accountLabel = me.mail || me.userPrincipalName || null;
+      }
+    } catch (e) {}
+  }
+
+  // Finds (or creates) the shared "Ledger" folder: first checks your own
+  // OneDrive, then folders others have shared with you, and only creates
+  // a new one if neither exists yet.
+  async function resolveLedgerLocation(token) {
+    if (oneDrive.remoteRef) return oneDrive.remoteRef;
+    var own = await graphFetch('/me/drive/root:/Ledger', token);
+    if (own.ok) {
+      var ownJson = await own.json();
+      return { driveId: ownJson.parentReference.driveId, folderId: ownJson.id, mode: 'own' };
+    }
+    var sharedRes = await graphFetch('/me/drive/sharedWithMe', token);
+    if (sharedRes.ok) {
+      var sharedJson = await sharedRes.json();
+      var match = (sharedJson.value || []).find(function (item) {
+        return item.remoteItem && item.remoteItem.name === 'Ledger' && item.remoteItem.folder;
+      });
+      if (match) {
+        return { driveId: match.remoteItem.parentReference.driveId, folderId: match.remoteItem.id, mode: 'shared' };
+      }
+    }
+    var createRes = await graphFetch('/me/drive/root/children', token, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Ledger', folder: {}, '@microsoft.graph.conflictBehavior': 'fail' })
+    });
+    if (createRes.ok) {
+      var createdJson = await createRes.json();
+      return { driveId: createdJson.parentReference.driveId, folderId: createdJson.id, mode: 'own' };
+    }
+    throw new Error('resolve_failed');
+  }
+
+  async function downloadLedgerFile(token, ref) {
+    var res = await graphFetch('/drives/' + ref.driveId + '/items/' + ref.folderId + ':/entries.json:/content', token);
+    if (res.status === 404) return { data: null, etag: null };
+    if (!res.ok) throw new Error('download_failed_' + res.status);
+    var etag = res.headers.get('ETag');
+    var json = await res.json();
+    return { data: json, etag: etag };
+  }
+
+  async function uploadLedgerFile(token, ref, payload, ifMatchEtag) {
+    var headers = { 'Content-Type': 'application/json' };
+    if (ifMatchEtag) headers['if-match'] = ifMatchEtag;
+    var res = await graphFetch('/drives/' + ref.driveId + '/items/' + ref.folderId + ':/entries.json:/content', token, {
+      method: 'PUT', headers: headers, body: JSON.stringify(payload)
+    });
+    if (res.status === 412) return { conflict: true };
+    if (!res.ok) throw new Error('upload_failed_' + res.status);
+    var json = await res.json();
+    return { conflict: false, etag: json.eTag || null };
+  }
+
+  async function shareLedgerWith(email) {
+    var statusEl = document.getElementById('oneDriveShareStatus');
+    if (statusEl) statusEl.textContent = 'Sending invite…';
+    try {
+      var token = await getOneDriveAccessToken();
+      if (!token || !oneDrive.remoteRef) throw new Error('not_ready');
+      var res = await graphFetch('/drives/' + oneDrive.remoteRef.driveId + '/items/' + oneDrive.remoteRef.folderId + '/invite', token, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recipients: [{ email: email }],
+          message: 'Delar Ledger med dig så vi ser samma utgifter.',
+          requireSignIn: true, sendInvitation: true, roles: ['write']
+        })
+      });
+      if (!res.ok) throw new Error('invite_failed_' + res.status);
+      if (statusEl) statusEl.textContent = 'Invite sent to ' + email + '.';
+    } catch (e) {
+      if (statusEl) statusEl.textContent = 'Could not send invite (' + (e && e.message) + ').';
+    }
+  }
+
+  // Union-merge by entry id, newest `updatedAt`/`ts` wins; a tombstone
+  // (from either side) removes an entry unless it was edited again after
+  // the deletion. Pure function so it's easy to test without a network.
+  function mergeLedgerData(localEntries, localDeleted, remoteEntries, remoteDeleted) {
+    var deletedMap = {};
+    (localDeleted || []).concat(remoteDeleted || []).forEach(function (d) {
+      if (!deletedMap[d.id] || d.deletedAt > deletedMap[d.id]) deletedMap[d.id] = d.deletedAt;
+    });
+    var byId = {};
+    (localEntries || []).concat(remoteEntries || []).forEach(function (e) {
+      var stamp = e.updatedAt || e.ts || 0;
+      var existing = byId[e.id];
+      var existingStamp = existing ? (existing.updatedAt || existing.ts || 0) : -1;
+      if (!existing || stamp > existingStamp) byId[e.id] = e;
+    });
+    var cutoff = Date.now() - TOMBSTONE_MAX_AGE_MS;
+    var entries = Object.keys(byId).map(function (id) { return byId[id]; }).filter(function (e) {
+      var d = deletedMap[e.id];
+      return !d || d < (e.updatedAt || e.ts || 0);
+    });
+    var deletedIds = Object.keys(deletedMap)
+      .filter(function (id) { return deletedMap[id] > cutoff; })
+      .map(function (id) { return { id: id, deletedAt: deletedMap[id] }; });
+    return { entries: entries, deletedIds: deletedIds };
+  }
+
+  function oneDriveStatusText() {
+    var lines = [oneDrive.accountLabel ? 'Signed in as ' + oneDrive.accountLabel : 'Signed in'];
+    lines.push(oneDrive.syncing ? 'Syncing…' : (oneDrive.lastSyncedAt ? 'Last synced ' + formatTimestamp(oneDrive.lastSyncedAt) : 'Not synced yet'));
+    if (oneDrive.lastError) lines.push('Last error: ' + oneDrive.lastError);
+    return lines.join(' · ');
+  }
+
+  function renderOneDriveStatus() {
+    var el = document.getElementById('oneDriveStatus');
+    if (el) el.textContent = oneDriveStatusText();
+  }
+
+  function scheduleSync() {
+    if (!oneDrive.clientId || !oneDrive.refreshToken) return;
+    clearTimeout(syncDebounceTimer);
+    syncDebounceTimer = setTimeout(function () { syncOneDrive(); }, 1500);
+  }
+
+  async function syncOneDrive() {
+    if (!oneDrive.clientId || !oneDrive.refreshToken || oneDrive.syncing) return;
+    oneDrive.syncing = true;
+    renderOneDriveStatus();
+    try {
+      var token = await getOneDriveAccessToken();
+      if (!token) throw new Error('no_token');
+      var ref = oneDrive.remoteRef || await resolveLedgerLocation(token);
+      oneDrive.remoteRef = ref;
+      for (var attempt = 0; attempt < 3; attempt++) {
+        var remote = await downloadLedgerFile(token, ref);
+        var remoteData = remote.data || { entries: [], deletedIds: [] };
+        var merged = mergeLedgerData(state.entries, state.deletedIds, remoteData.entries, remoteData.deletedIds);
+        state.entries = merged.entries;
+        state.deletedIds = merged.deletedIds;
+        saveEntries();
+        saveDeletedIds();
+        var result = await uploadLedgerFile(token, ref, { entries: state.entries, deletedIds: state.deletedIds }, remote.etag);
+        if (!result.conflict) { oneDrive.lastEtag = result.etag; break; }
+      }
+      oneDrive.lastSyncedAt = Date.now();
+      oneDrive.lastError = null;
+      saveOneDriveConfig();
+      render();
+    } catch (e) {
+      oneDrive.lastError = (e && e.message) || 'sync_failed';
+    } finally {
+      oneDrive.syncing = false;
+      renderOneDriveStatus();
+    }
   }
 
   function dayKey(d) {
@@ -1324,8 +1675,11 @@
 
   function deleteEntry(id) {
     state.entries = state.entries.filter(function (e) { return e.id !== id; });
+    state.deletedIds.push({ id: id, deletedAt: Date.now() });
     saveEntries();
+    saveDeletedIds();
     render();
+    scheduleSync();
   }
 
   function findDuplicate(candidate, excludeId) {
@@ -1483,15 +1837,18 @@
         existingEntry.date = date;
         existingEntry.category = selectedCategory;
         existingEntry.bucket = selectedBucket;
+        existingEntry.updatedAt = Date.now();
       } else {
         state.entries.push({
           id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
-          date: date, amount: amount, description: desc, ts: Date.now(), category: selectedCategory, bucket: selectedBucket
+          date: date, amount: amount, description: desc, ts: Date.now(), updatedAt: Date.now(),
+          category: selectedCategory, bucket: selectedBucket
         });
       }
       saveEntries();
       render();
       closePanel();
+      scheduleSync();
     }
 
     document.getElementById('saveAdd').addEventListener('click', function () {
@@ -1677,6 +2034,78 @@
     });
   }
 
+  function oneDriveMarkup() {
+    var connected = !!oneDrive.refreshToken;
+    var hasClientId = !!oneDrive.clientId;
+    var html = '<div class="field"><label>Share with (OneDrive)</label>';
+    if (!hasClientId) {
+      html += '<input type="text" id="oneDriveClientIdInput" placeholder="Microsoft app Client ID" autocomplete="off">' +
+        '<p class="hint">One-time setup \u2014 needs a free Microsoft app registration first. Ask if you haven\u2019t set this up yet.</p>' +
+        '<button type="button" class="btn btn-secondary" id="oneDriveSaveClientId" style="width:100%;margin-top:8px;">Save Client ID</button>';
+    } else if (!connected) {
+      html += '<button type="button" class="btn btn-secondary" id="oneDriveConnectBtn" style="width:100%;">Connect Microsoft account</button>';
+    } else {
+      html += '<div id="oneDriveStatus" class="hint">' + oneDriveStatusText() + '</div>' +
+        '<div class="panel-actions" style="margin-top:8px;">' +
+        '<button type="button" class="btn btn-secondary" id="oneDriveSyncNow">Sync now</button>' +
+        '<button type="button" class="btn btn-secondary" id="oneDriveDisconnect">Disconnect</button>' +
+        '</div>';
+      if (oneDrive.remoteRef && oneDrive.remoteRef.mode === 'own') {
+        html += '<div style="margin-top:12px;"><label for="oneDriveShareEmail" style="display:block;font-size:12px;color:var(--ink-soft);margin-bottom:6px;">Share this Ledger with</label>' +
+          '<input type="email" id="oneDriveShareEmail" placeholder="name@example.com" autocomplete="off">' +
+          '<button type="button" class="btn btn-secondary" id="oneDriveShareBtn" style="width:100%;margin-top:8px;">Send invite</button>' +
+          '<div id="oneDriveShareStatus" class="hint" style="margin-top:6px;"></div></div>';
+      }
+    }
+    html += '</div>';
+    return html;
+  }
+
+  function bindOneDriveSettings() {
+    var saveIdBtn = document.getElementById('oneDriveSaveClientId');
+    if (saveIdBtn) {
+      saveIdBtn.addEventListener('click', function () {
+        var val = document.getElementById('oneDriveClientIdInput').value.trim();
+        if (!val) return;
+        oneDrive.clientId = val;
+        saveOneDriveConfig();
+        refreshOneDriveSection();
+      });
+    }
+    var connectBtn = document.getElementById('oneDriveConnectBtn');
+    if (connectBtn) connectBtn.addEventListener('click', function () { startOneDriveLogin(); });
+    var syncBtn = document.getElementById('oneDriveSyncNow');
+    if (syncBtn) syncBtn.addEventListener('click', function () { syncOneDrive(); });
+    var disconnectBtn = document.getElementById('oneDriveDisconnect');
+    if (disconnectBtn) {
+      disconnectBtn.addEventListener('click', function () {
+        oneDrive.refreshToken = null;
+        oneDrive.accessToken = null;
+        oneDrive.remoteRef = null;
+        oneDrive.accountLabel = null;
+        oneDrive.lastSyncedAt = null;
+        oneDrive.lastEtag = null;
+        saveOneDriveConfig();
+        refreshOneDriveSection();
+      });
+    }
+    var shareBtn = document.getElementById('oneDriveShareBtn');
+    if (shareBtn) {
+      shareBtn.addEventListener('click', function () {
+        var email = document.getElementById('oneDriveShareEmail').value.trim();
+        if (!email) return;
+        shareLedgerWith(email);
+      });
+    }
+  }
+
+  function refreshOneDriveSection() {
+    var section = document.getElementById('oneDriveSection');
+    if (!section) return;
+    section.innerHTML = oneDriveMarkup();
+    bindOneDriveSettings();
+  }
+
   function openSettingsPanel() {
     var val = state.allowance !== null && !isNaN(state.allowance) ? state.allowance : '';
     panel.innerHTML =
@@ -1690,6 +2119,7 @@
       bucketConfigMarkup() +
       badgesMarkup() +
       categoriesManageMarkup() +
+      '<div id="oneDriveSection">' + oneDriveMarkup() + '</div>' +
       '<div class="panel-actions">' +
       '<button class="btn btn-secondary" id="cancelSettings">Cancel</button>' +
       '<button class="btn btn-primary" id="saveSettings">Save</button>' +
@@ -1699,6 +2129,7 @@
       '<p class="version-line">Ledger v' + APP_VERSION + '</p>';
     showPanel();
     setTimeout(function () { document.getElementById('allowanceInput').focus(); }, 50);
+    bindOneDriveSettings();
 
     document.getElementById('cancelSettings').addEventListener('click', closePanel);
     document.getElementById('saveSettings').addEventListener('click', function () {
@@ -1759,12 +2190,14 @@
         if (!row.include) return;
         state.entries.push({
           id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
-          date: row.date, amount: row.amount, description: row.description, ts: Date.now(), category: row.category || null
+          date: row.date, amount: row.amount, description: row.description, ts: Date.now(), updatedAt: Date.now(),
+          category: row.category || null
         });
       });
       saveEntries();
       render();
       closePanel();
+      scheduleSync();
     });
   }
 
@@ -2043,6 +2476,12 @@
     setTimeout(openSettingsPanel, 300);
   }
   initScanning();
+  handleOneDriveRedirect().then(function (handledRedirect) {
+    if (!handledRedirect) syncOneDrive();
+  });
+  setInterval(function () {
+    if (document.visibilityState === 'visible') syncOneDrive();
+  }, 120000);
 })();
 </script>
 </body>
