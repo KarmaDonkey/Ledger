@@ -50,6 +50,47 @@
     --shadow: rgba(0, 0, 0, 0.4);
   }
 
+  /* ---- Seasonal themes (auto-applied by date, see applySeasonTheme) ---- */
+  :root[data-season="halloween"] {
+    --bg: #33200F;
+    --surface: #3D2814;
+    --surface-2: #4A311C;
+    --ink: #F7E9D7;
+    --ink-soft: #D3AE83;
+    --ink-faint: #A98A61;
+    --accent: #E8730A;
+    --good: #9CBB6B;
+    --over: #D9694C;
+    --hairline: rgba(247, 233, 215, 0.14);
+    --shadow: rgba(20, 10, 5, 0.4);
+  }
+  :root[data-season="december"] {
+    --bg: #FAF6F0;
+    --surface: #F3ECE3;
+    --surface-2: #EDE2D6;
+    --ink: #2A2620;
+    --ink-soft: #8A7A6E;
+    --ink-faint: #A99C8D;
+    --accent: #C0392B;
+    --good: #2F6E4F;
+    --over: #942F22;
+    --hairline: rgba(42, 38, 32, 0.12);
+    --shadow: rgba(120, 100, 80, 0.18);
+  }
+  :root[data-season="summer"] {
+    --bg: #FFF3D6;
+    --surface: #FCEAC2;
+    --surface-2: #F7DFA8;
+    --ink: #3A2A12;
+    --ink-soft: #7A5B2E;
+    --ink-faint: #9C8055;
+    --accent: #FF6F3C;
+    --good: #2F8F79;
+    --over: #C0392B;
+    --hairline: rgba(58, 42, 18, 0.12);
+    --shadow: rgba(90, 60, 10, 0.22);
+  }
+
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body {
     margin: 0; padding: 0;
@@ -431,7 +472,7 @@
     if (pct >= 60) return 'sunglasses';
     return 'plain';
   }
-  var APP_VERSION = '2.0';
+  var APP_VERSION = '2.1';
   var state = {
     entries: [], allowance: null, categories: [], monthStartDay: 1, view: 'history',
     buckets: { trackingStart: null, everydayTarget: null, funTarget: null, funNote: '' }, badges: []
@@ -575,6 +616,26 @@
   }
   function headerLabel() {
     return new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+  }
+
+  // ---------------------------------------------------------------
+  // Seasonal visual themes: a different color palette auto-applied
+  // by date, no manual override. Halloween runs mid-October through
+  // Nov 5 (covers Allhelgona too); December and Summer (July) cover
+  // their full calendar months.
+  // ---------------------------------------------------------------
+  function getSeasonTheme(date) {
+    var m = date.getMonth() + 1, d = date.getDate();
+    if ((m === 10 && d >= 15) || (m === 11 && d <= 5)) return 'halloween';
+    if (m === 12) return 'december';
+    if (m === 7) return 'summer';
+    return null;
+  }
+
+  function applySeasonTheme() {
+    var season = getSeasonTheme(new Date());
+    if (season) document.documentElement.setAttribute('data-season', season);
+    else document.documentElement.removeAttribute('data-season');
   }
 
   // ---------------------------------------------------------------
@@ -1099,6 +1160,7 @@
     var analysisView = document.getElementById('analysisView');
     var analysisBtn = document.getElementById('openAnalysis');
 
+    applySeasonTheme();
     checkBadges();
     updateStreakBadge();
 
