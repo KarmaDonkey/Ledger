@@ -2154,6 +2154,11 @@
       state.buckets.funTarget = funTarget;
       state.buckets.funNote = document.getElementById('funNoteInput').value.trim();
       saveBuckets();
+      var clientIdInput = document.getElementById('oneDriveClientIdInput');
+      if (clientIdInput && clientIdInput.value.trim()) {
+        oneDrive.clientId = clientIdInput.value.trim();
+        saveOneDriveConfig();
+      }
       closePanel();
       render();
     });
