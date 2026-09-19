@@ -362,6 +362,8 @@
   .period-nav .icon-btn { padding: 6px 10px; font-size: 20px; line-height: 1; }
   .period-label { font-size: 14px; font-weight: 500; color: var(--ink-soft); text-align: center; flex: 1; }
 
+  .trend-chart { margin: 4px 0 20px; padding: 12px 14px; background: var(--surface); border-radius: 12px; }
+
   .cat-breakdown { margin-top: 6px; }
   .cat-row { padding: 12px 0; border-bottom: 1px solid var(--hairline); cursor: pointer; }
   .cat-row:last-child { border-bottom: none; }
@@ -523,7 +525,7 @@
     if (pct >= 60) return 'sunglasses';
     return 'plain';
   }
-  var APP_VERSION = '2.4';
+  var APP_VERSION = '2.5';
   var state = {
     entries: [], allowance: null, categories: [], monthStartDay: 1, view: 'history',
     buckets: { trackingStart: null, everydayTarget: null, funTarget: null, funNote: '' }, badges: [],
@@ -1039,6 +1041,54 @@
     return at > 0 ? email.slice(0, at) : email;
   }
 
+  // Cumulative under/over-budget trend for the current Analysis period:
+  // a running (allowance - spent) total day by day, up to today, against
+  // a dashed zero-line reference (spanning the full period) showing where
+  // "exactly on budget" would sit.
+  function budgetTrendChartHtml(period, days, budgetItems) {
+    if (state.allowance === null || isNaN(state.allowance)) return '';
+    var byDate = {};
+    budgetItems.forEach(function (e) { byDate[e.date] = (byDate[e.date] || 0) + e.amount; });
+    var today = new Date();
+    today.setHours(0, 0, 0, 0);
+    var series = [];
+    var cum = 0;
+    for (var i = 0; i < days; i++) {
+      var d = new Date(period.start);
+      d.setDate(period.start.getDate() + i);
+      if (d.getTime() > today.getTime()) break;
+      cum += state.allowance - (byDate[dayKey(d)] || 0);
+      series.push(cum);
+    }
+    if (series.length === 0) return '';
+
+    var W = 320, H = 120, padX = 8, padY = 14;
+    var innerW = W - padX * 2, innerH = H - padY * 2;
+    var values = series.concat([0]);
+    var minVal = Math.min.apply(null, values), maxVal = Math.max.apply(null, values);
+    if (minVal === maxVal) { minVal -= 100; maxVal += 100; }
+    function xAt(i) { return padX + (days <= 1 ? 0 : (i / (days - 1)) * innerW); }
+    function yAt(v) { return padY + innerH - ((v - minVal) / (maxVal - minVal)) * innerH; }
+
+    var pathD = series.map(function (v, i) { return (i === 0 ? 'M' : 'L') + xAt(i).toFixed(1) + ',' + yAt(v).toFixed(1); }).join(' ');
+    var zeroY = yAt(0).toFixed(1);
+    var last = series[series.length - 1];
+    var statusColor = last >= 0 ? 'var(--good)' : 'var(--over)';
+    var lastX = xAt(series.length - 1).toFixed(1);
+    var lastY = yAt(last).toFixed(1);
+
+    return '<div class="trend-chart">' +
+      '<p class="hint" style="margin:0 0 6px;">' +
+      (last >= 0 ? formatMoney(last) + ' under budget so far' : formatMoney(Math.abs(last)) + ' over budget so far') +
+      '</p>' +
+      '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;">' +
+      '<line x1="' + padX + '" y1="' + zeroY + '" x2="' + (W - padX) + '" y2="' + zeroY + '" stroke="var(--ink-faint)" stroke-width="1" stroke-dasharray="3,3"/>' +
+      '<path d="' + pathD + '" fill="none" stroke="' + statusColor + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '<circle cx="' + lastX + '" cy="' + lastY + '" r="3" fill="' + statusColor + '"/>' +
+      '</svg>' +
+      '</div>';
+  }
+
   function dayLabel(key) {
     var today = todayKey();
     var d = new Date(key + 'T00:00:00');
@@ -1526,6 +1576,10 @@
         '<button type="button" class="type-btn' + (mode === 'total' ? ' active' : '') + '" data-mode="total">Total</button>' +
         '<button type="button" class="type-btn' + (mode === 'average' ? ' active' : '') + '" data-mode="average">Avg / day</button>' +
         '</div>';
+    }
+
+    if (type !== 'day' && !analysisState.drillCategory) {
+      html += budgetTrendChartHtml(period, days, budgetItems);
     }
 
     if (analysisState.drillCategory) {
