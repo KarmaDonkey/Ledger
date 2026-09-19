@@ -422,6 +422,11 @@
     background: color-mix(in srgb, var(--accent) 16%, transparent);
     border-radius: 8px; padding: 1px 6px; margin-left: 6px; vertical-align: middle;
   }
+  .entry-author-tag {
+    display: inline-block; font-size: 10px; font-weight: 500; color: var(--ink-soft);
+    background: var(--surface-2);
+    border-radius: 8px; padding: 1px 6px; margin-left: 6px; vertical-align: middle;
+  }
 
   .bucket-cashout-row { padding: 10px 0; border-bottom: 1px solid var(--hairline); }
   .bucket-cashout-row:last-child { border-bottom: none; }
@@ -518,7 +523,7 @@
     if (pct >= 60) return 'sunglasses';
     return 'plain';
   }
-  var APP_VERSION = '2.3';
+  var APP_VERSION = '2.4';
   var state = {
     entries: [], allowance: null, categories: [], monthStartDay: 1, view: 'history',
     buckets: { trackingStart: null, everydayTarget: null, funTarget: null, funNote: '' }, badges: [],
@@ -907,8 +912,36 @@
       });
       if (!res.ok) throw new Error('invite_failed_' + res.status);
       if (statusEl) statusEl.textContent = 'Invite sent to ' + email + '.';
+      fetchLedgerPermissions();
     } catch (e) {
       if (statusEl) statusEl.textContent = 'Could not send invite (' + (e && e.message) + ').';
+    }
+  }
+
+  // Lists who the shared "Ledger" folder has been invited to / has access,
+  // via OneDrive's own sharing (only meaningful from the owner's side).
+  async function fetchLedgerPermissions() {
+    var listEl = document.getElementById('oneDrivePermissionsList');
+    if (!listEl || !oneDrive.remoteRef || oneDrive.remoteRef.mode !== 'own') return;
+    listEl.textContent = 'Loading…';
+    try {
+      var token = await getOneDriveAccessToken();
+      if (!token) throw new Error('no_token');
+      var res = await graphFetch('/drives/' + oneDrive.remoteRef.driveId + '/items/' + oneDrive.remoteRef.folderId + '/permissions', token);
+      if (!res.ok) throw new Error('permissions_failed_' + res.status);
+      var json = await res.json();
+      var people = (json.value || []).map(function (p) {
+        var identity = (p.grantedToV2 && p.grantedToV2.user) || (p.grantedTo && p.grantedTo.user) || null;
+        var label = identity ? (identity.displayName || identity.email || identity.id)
+          : (p.invitation && p.invitation.email) || 'Pending invite';
+        var roles = (p.roles || []).join(', ');
+        return (roles ? label + ' (' + roles + ')' : label).replace(/</g, '&lt;');
+      });
+      listEl.innerHTML = people.length
+        ? people.map(function (p) { return '<div>' + p + '</div>'; }).join('')
+        : '<span class="hint">Just you so far.</span>';
+    } catch (e) {
+      listEl.textContent = 'Could not load (' + (e && e.message) + ')';
     }
   }
 
@@ -998,6 +1031,12 @@
     var sign = n < 0 ? '-' : '';
     var abs = Math.abs(n).toLocaleString('sv-SE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     return sign + abs + ' kr';
+  }
+
+  function authorLabel(email) {
+    if (!email) return '';
+    var at = email.indexOf('@');
+    return at > 0 ? email.slice(0, at) : email;
   }
 
   function dayLabel(key) {
@@ -1500,7 +1539,8 @@
         catItems.forEach(function (e) {
           html += '<div class="entry-row" data-id="' + e.id + '">' +
             '<span class="entry-desc">' + (e.description || '(no description)') +
-            (e.bucket ? '<span class="entry-bucket-tag">' + BUCKET_LABELS[e.bucket] + '</span>' : '') + '</span>' +
+            (e.bucket ? '<span class="entry-bucket-tag">' + BUCKET_LABELS[e.bucket] + '</span>' : '') +
+            (e.updatedBy ? '<span class="entry-author-tag">' + authorLabel(e.updatedBy).replace(/</g, '&lt;') + '</span>' : '') + '</span>' +
             '<span class="entry-amount mono' + (e.amount < 0 ? ' refund' : '') + '">' + formatMoney(e.amount) + '</span>' +
             '</div>';
         });
@@ -1656,6 +1696,12 @@
           tag.textContent = BUCKET_LABELS[e.bucket];
           desc.appendChild(tag);
         }
+        if (e.updatedBy) {
+          var authorTag = document.createElement('span');
+          authorTag.className = 'entry-author-tag';
+          authorTag.textContent = authorLabel(e.updatedBy);
+          desc.appendChild(authorTag);
+        }
         row.appendChild(desc);
         var amt = document.createElement('span');
         amt.className = 'entry-amount mono' + (e.amount < 0 ? ' refund' : '');
@@ -1696,12 +1742,13 @@
       if (a.date !== b.date) return a.date < b.date ? -1 : 1;
       return a.ts - b.ts;
     });
-    var lines = ['Date,Description,Amount (SEK),Category,Bucket'];
+    var lines = ['Date,Description,Amount (SEK),Category,Bucket,By'];
     rows.forEach(function (e) {
       var desc = '"' + String(e.description || '').replace(/"/g, '""') + '"';
       var cat = '"' + String(e.category || UNCATEGORIZED).replace(/"/g, '""') + '"';
       var bucket = e.bucket ? BUCKET_LABELS[e.bucket] : '';
-      lines.push(e.date + ',' + desc + ',' + e.amount.toFixed(2) + ',' + cat + ',' + bucket);
+      var by = '"' + String(e.updatedBy || '').replace(/"/g, '""') + '"';
+      lines.push(e.date + ',' + desc + ',' + e.amount.toFixed(2) + ',' + cat + ',' + bucket + ',' + by);
     });
     var csv = lines.join('\r\n');
     var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -1838,11 +1885,12 @@
         existingEntry.category = selectedCategory;
         existingEntry.bucket = selectedBucket;
         existingEntry.updatedAt = Date.now();
+        if (oneDrive.accountLabel) existingEntry.updatedBy = oneDrive.accountLabel;
       } else {
         state.entries.push({
           id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
           date: date, amount: amount, description: desc, ts: Date.now(), updatedAt: Date.now(),
-          category: selectedCategory, bucket: selectedBucket
+          category: selectedCategory, bucket: selectedBucket, updatedBy: oneDrive.accountLabel || null
         });
       }
       saveEntries();
@@ -2051,6 +2099,8 @@
         '<button type="button" class="btn btn-secondary" id="oneDriveDisconnect">Disconnect</button>' +
         '</div>';
       if (oneDrive.remoteRef && oneDrive.remoteRef.mode === 'own') {
+        html += '<div style="margin-top:12px;"><label style="display:block;font-size:12px;color:var(--ink-soft);margin-bottom:6px;">Who has access</label>' +
+          '<div id="oneDrivePermissionsList" class="hint">Loading…</div></div>';
         html += '<div style="margin-top:12px;"><label for="oneDriveShareEmail" style="display:block;font-size:12px;color:var(--ink-soft);margin-bottom:6px;">Share this Ledger with</label>' +
           '<input type="email" id="oneDriveShareEmail" placeholder="name@example.com" autocomplete="off">' +
           '<button type="button" class="btn btn-secondary" id="oneDriveShareBtn" style="width:100%;margin-top:8px;">Send invite</button>' +
@@ -2097,6 +2147,7 @@
         shareLedgerWith(email);
       });
     }
+    if (document.getElementById('oneDrivePermissionsList')) fetchLedgerPermissions();
   }
 
   function refreshOneDriveSection() {
@@ -2196,7 +2247,7 @@
         state.entries.push({
           id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
           date: row.date, amount: row.amount, description: row.description, ts: Date.now(), updatedAt: Date.now(),
-          category: row.category || null
+          category: row.category || null, updatedBy: oneDrive.accountLabel || null
         });
       });
       saveEntries();
