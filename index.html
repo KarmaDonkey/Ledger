@@ -161,6 +161,11 @@
     gap: 12px;
   }
   .date-label { font-size: 13px; color: var(--ink-soft); letter-spacing: 0.02em; margin: 0; }
+  .profile-pill {
+    display: inline-flex; align-items: center; gap: 4px; margin-top: 6px;
+    padding: 3px 9px; border-radius: 20px; background: var(--surface-2); color: var(--ink-soft);
+    font-size: 12px; font-weight: 500; border: none; cursor: pointer; font-family: inherit;
+  }
   .header-actions { display: flex; gap: 6px; margin: -6px -6px 0 0; }
   .icon-btn {
     background: none;
@@ -468,7 +473,10 @@
 <div class="page">
 
   <header>
-    <p class="date-label" id="todayLabel">—</p>
+    <div>
+      <p class="date-label" id="todayLabel">—</p>
+      <button type="button" class="profile-pill" id="profilePill"></button>
+    </div>
     <div class="header-actions">
       <button class="icon-btn" id="openAnalysis" aria-label="Analysis">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 19V5m5 14V9m5 10V13m5 6V7"/></svg>
@@ -504,16 +512,53 @@
 
 <script>
 (function () {
-  var STORE_KEY = 'ledger.entries.v1';
-  var ALLOWANCE_KEY = 'ledger.allowance.v1';
-  var LAST_SAVED_KEY = 'ledger.lastSaved.v1';
-  var CATEGORIES_KEY = 'ledger.categories.v1';
-  var MONTH_START_KEY = 'ledger.monthStartDay.v1';
-  var BUCKETS_KEY = 'ledger.buckets.v1';
-  var BADGES_KEY = 'ledger.badges.v1';
-  var DELETED_IDS_KEY = 'ledger.deletedIds.v1';
+  // Profiles: two fully independent copies of the app's data (own budget,
+  // entries, streak, buckets, badges, categories), switched via a pill in
+  // the header. Only the "shared" profile ever syncs to OneDrive.
+  var PROFILES = ['shared', 'personal'];
+  var PROFILE_LABELS = { shared: 'Gemensam', personal: 'Personlig' };
+  var PROFILE_ICONS = { shared: '🏠', personal: '👤' };
+  var ACTIVE_PROFILE_KEY = 'ledger.activeProfile.v1';
+  var PROFILE_MIGRATION_KEY = 'ledger.profileMigrationV1.v1';
+  var activeProfile = 'shared';
+
+  function profileKey(name) { return 'ledger.' + activeProfile + '.' + name + '.v1'; }
+  function STORE_KEY() { return profileKey('entries'); }
+  function ALLOWANCE_KEY() { return profileKey('allowance'); }
+  function LAST_SAVED_KEY() { return profileKey('lastSaved'); }
+  function CATEGORIES_KEY() { return profileKey('categories'); }
+  function MONTH_START_KEY() { return profileKey('monthStartDay'); }
+  function BUCKETS_KEY() { return profileKey('buckets'); }
+  function BADGES_KEY() { return profileKey('badges'); }
+  function DELETED_IDS_KEY() { return profileKey('deletedIds'); }
+  function CATEGORY_MIGRATION_KEY() { return profileKey('categoriesMigrationV2'); }
   var ONEDRIVE_KEY = 'ledger.onedrive.v1';
-  var CATEGORY_MIGRATION_KEY = 'ledger.categoriesMigrationV2.v1';
+
+  // One-time migration: before profiles existed, everything lived under
+  // flat (non-namespaced) keys. That data becomes the "shared" profile.
+  function migrateToProfiles() {
+    try {
+      if (localStorage.getItem(PROFILE_MIGRATION_KEY)) return;
+      var pairs = [
+        ['ledger.entries.v1', 'ledger.shared.entries.v1'],
+        ['ledger.allowance.v1', 'ledger.shared.allowance.v1'],
+        ['ledger.lastSaved.v1', 'ledger.shared.lastSaved.v1'],
+        ['ledger.categories.v1', 'ledger.shared.categories.v1'],
+        ['ledger.monthStartDay.v1', 'ledger.shared.monthStartDay.v1'],
+        ['ledger.buckets.v1', 'ledger.shared.buckets.v1'],
+        ['ledger.badges.v1', 'ledger.shared.badges.v1'],
+        ['ledger.deletedIds.v1', 'ledger.shared.deletedIds.v1'],
+        ['ledger.categoriesMigrationV2.v1', 'ledger.shared.categoriesMigrationV2.v1']
+      ];
+      pairs.forEach(function (pair) {
+        var oldVal = localStorage.getItem(pair[0]);
+        if (oldVal !== null && localStorage.getItem(pair[1]) === null) {
+          localStorage.setItem(pair[1], oldVal);
+        }
+      });
+      localStorage.setItem(PROFILE_MIGRATION_KEY, '1');
+    } catch (e) {}
+  }
   var NEW_CATEGORIES_V2 = ['Take-away', 'Fika', 'Kläder'];
   var DEFAULT_CATEGORIES = ['Mat', 'Transport', 'Nöje', 'Räkningar', 'Övrigt', 'Take-away', 'Fika', 'Kläder'];
   var UNCATEGORIZED = 'Okategoriserad';
@@ -525,7 +570,7 @@
     if (pct >= 60) return 'sunglasses';
     return 'plain';
   }
-  var APP_VERSION = '2.5';
+  var APP_VERSION = '2.6';
   var state = {
     entries: [], allowance: null, categories: [], monthStartDay: 1, view: 'history',
     buckets: { trackingStart: null, everydayTarget: null, funTarget: null, funNote: '' }, badges: [],
@@ -557,38 +602,38 @@
 
   function loadState() {
     try {
-      var rawEntries = localStorage.getItem(STORE_KEY);
+      var rawEntries = localStorage.getItem(STORE_KEY());
       state.entries = rawEntries ? JSON.parse(rawEntries) : [];
     } catch (e) { state.entries = []; }
     try {
-      var rawAllowance = localStorage.getItem(ALLOWANCE_KEY);
+      var rawAllowance = localStorage.getItem(ALLOWANCE_KEY());
       state.allowance = rawAllowance !== null ? parseFloat(rawAllowance) : null;
     } catch (e) { state.allowance = null; }
     try {
-      var rawLastSaved = localStorage.getItem(LAST_SAVED_KEY);
+      var rawLastSaved = localStorage.getItem(LAST_SAVED_KEY());
       storageStatus.lastSaved = rawLastSaved ? parseInt(rawLastSaved, 10) : null;
     } catch (e) { storageStatus.lastSaved = null; }
     try {
-      var rawCats = localStorage.getItem(CATEGORIES_KEY);
+      var rawCats = localStorage.getItem(CATEGORIES_KEY());
       state.categories = rawCats ? JSON.parse(rawCats) : DEFAULT_CATEGORIES.slice();
     } catch (e) { state.categories = DEFAULT_CATEGORIES.slice(); }
     try {
-      var rawStart = localStorage.getItem(MONTH_START_KEY);
+      var rawStart = localStorage.getItem(MONTH_START_KEY());
       state.monthStartDay = rawStart !== null ? parseInt(rawStart, 10) : 1;
       if (isNaN(state.monthStartDay) || state.monthStartDay < 1 || state.monthStartDay > 31) state.monthStartDay = 1;
     } catch (e) { state.monthStartDay = 1; }
     try {
-      var rawBuckets = localStorage.getItem(BUCKETS_KEY);
+      var rawBuckets = localStorage.getItem(BUCKETS_KEY());
       state.buckets = rawBuckets ? JSON.parse(rawBuckets) : { trackingStart: null, everydayTarget: null, funTarget: null, funNote: '' };
       if (state.buckets.funTarget === undefined) state.buckets.funTarget = null;
       if (state.buckets.funNote === undefined) state.buckets.funNote = '';
     } catch (e) { state.buckets = { trackingStart: null, everydayTarget: null, funTarget: null, funNote: '' }; }
     try {
-      var rawBadges = localStorage.getItem(BADGES_KEY);
+      var rawBadges = localStorage.getItem(BADGES_KEY());
       state.badges = rawBadges ? JSON.parse(rawBadges) : [];
     } catch (e) { state.badges = []; }
     try {
-      var rawDeleted = localStorage.getItem(DELETED_IDS_KEY);
+      var rawDeleted = localStorage.getItem(DELETED_IDS_KEY());
       state.deletedIds = rawDeleted ? JSON.parse(rawDeleted) : [];
     } catch (e) { state.deletedIds = []; }
     try {
@@ -604,12 +649,12 @@
       }
     } catch (e) {}
     try {
-      if (!localStorage.getItem(CATEGORY_MIGRATION_KEY)) {
+      if (!localStorage.getItem(CATEGORY_MIGRATION_KEY())) {
         var addedNewCategory = false;
         NEW_CATEGORIES_V2.forEach(function (c) {
           if (state.categories.indexOf(c) === -1) { state.categories.push(c); addedNewCategory = true; }
         });
-        localStorage.setItem(CATEGORY_MIGRATION_KEY, '1');
+        localStorage.setItem(CATEGORY_MIGRATION_KEY(), '1');
         if (addedNewCategory) saveCategories();
       }
     } catch (e) {}
@@ -617,60 +662,60 @@
   }
   function saveEntries() {
     try {
-      localStorage.setItem(STORE_KEY, JSON.stringify(state.entries));
+      localStorage.setItem(STORE_KEY(), JSON.stringify(state.entries));
       storageStatus.ok = true;
       storageStatus.lastSaved = Date.now();
-      try { localStorage.setItem(LAST_SAVED_KEY, String(storageStatus.lastSaved)); } catch (e2) {}
+      try { localStorage.setItem(LAST_SAVED_KEY(), String(storageStatus.lastSaved)); } catch (e2) {}
     } catch (e) { storageStatus.ok = false; }
   }
 
   function saveAllowance() {
     try {
-      localStorage.setItem(ALLOWANCE_KEY, String(state.allowance));
+      localStorage.setItem(ALLOWANCE_KEY(), String(state.allowance));
       storageStatus.ok = true;
       storageStatus.lastSaved = Date.now();
-      try { localStorage.setItem(LAST_SAVED_KEY, String(storageStatus.lastSaved)); } catch (e2) {}
+      try { localStorage.setItem(LAST_SAVED_KEY(), String(storageStatus.lastSaved)); } catch (e2) {}
     } catch (e) { storageStatus.ok = false; }
   }
 
   function saveCategories() {
     try {
-      localStorage.setItem(CATEGORIES_KEY, JSON.stringify(state.categories));
+      localStorage.setItem(CATEGORIES_KEY(), JSON.stringify(state.categories));
       storageStatus.ok = true;
       storageStatus.lastSaved = Date.now();
-      try { localStorage.setItem(LAST_SAVED_KEY, String(storageStatus.lastSaved)); } catch (e2) {}
+      try { localStorage.setItem(LAST_SAVED_KEY(), String(storageStatus.lastSaved)); } catch (e2) {}
     } catch (e) { storageStatus.ok = false; }
   }
 
   function saveMonthStartDay() {
     try {
-      localStorage.setItem(MONTH_START_KEY, String(state.monthStartDay));
+      localStorage.setItem(MONTH_START_KEY(), String(state.monthStartDay));
       storageStatus.ok = true;
       storageStatus.lastSaved = Date.now();
-      try { localStorage.setItem(LAST_SAVED_KEY, String(storageStatus.lastSaved)); } catch (e2) {}
+      try { localStorage.setItem(LAST_SAVED_KEY(), String(storageStatus.lastSaved)); } catch (e2) {}
     } catch (e) { storageStatus.ok = false; }
   }
 
   function saveBuckets() {
     try {
-      localStorage.setItem(BUCKETS_KEY, JSON.stringify(state.buckets));
+      localStorage.setItem(BUCKETS_KEY(), JSON.stringify(state.buckets));
       storageStatus.ok = true;
       storageStatus.lastSaved = Date.now();
-      try { localStorage.setItem(LAST_SAVED_KEY, String(storageStatus.lastSaved)); } catch (e2) {}
+      try { localStorage.setItem(LAST_SAVED_KEY(), String(storageStatus.lastSaved)); } catch (e2) {}
     } catch (e) { storageStatus.ok = false; }
   }
 
   function saveBadges() {
     try {
-      localStorage.setItem(BADGES_KEY, JSON.stringify(state.badges));
+      localStorage.setItem(BADGES_KEY(), JSON.stringify(state.badges));
       storageStatus.ok = true;
       storageStatus.lastSaved = Date.now();
-      try { localStorage.setItem(LAST_SAVED_KEY, String(storageStatus.lastSaved)); } catch (e2) {}
+      try { localStorage.setItem(LAST_SAVED_KEY(), String(storageStatus.lastSaved)); } catch (e2) {}
     } catch (e) { storageStatus.ok = false; }
   }
 
   function saveDeletedIds() {
-    try { localStorage.setItem(DELETED_IDS_KEY, JSON.stringify(state.deletedIds)); } catch (e) {}
+    try { localStorage.setItem(DELETED_IDS_KEY(), JSON.stringify(state.deletedIds)); } catch (e) {}
   }
 
   function saveOneDriveConfig() {
@@ -986,12 +1031,15 @@
   }
 
   function scheduleSync() {
-    if (!oneDrive.clientId || !oneDrive.refreshToken) return;
+    if (activeProfile !== 'shared' || !oneDrive.clientId || !oneDrive.refreshToken) return;
     clearTimeout(syncDebounceTimer);
     syncDebounceTimer = setTimeout(function () { syncOneDrive(); }, 1500);
   }
 
   async function syncOneDrive() {
+    // Only the "shared" profile ever syncs — "personal" must never be
+    // uploaded to or overwritten from the shared OneDrive file.
+    if (activeProfile !== 'shared') return;
     if (!oneDrive.clientId || !oneDrive.refreshToken || oneDrive.syncing) return;
     oneDrive.syncing = true;
     renderOneDriveStatus();
@@ -1668,6 +1716,9 @@
     var analysisView = document.getElementById('analysisView');
     var analysisBtn = document.getElementById('openAnalysis');
 
+    var pill = document.getElementById('profilePill');
+    if (pill) pill.textContent = PROFILE_ICONS[activeProfile] + ' ' + PROFILE_LABELS[activeProfile];
+
     applySeasonTheme();
     checkBadges();
     updateStreakBadge();
@@ -2211,6 +2262,35 @@
     bindOneDriveSettings();
   }
 
+  function switchProfile(profile) {
+    if (PROFILES.indexOf(profile) === -1 || profile === activeProfile) { closePanel(); return; }
+    activeProfile = profile;
+    try { localStorage.setItem(ACTIVE_PROFILE_KEY, profile); } catch (e) {}
+    closePanel();
+    loadState();
+    state.view = 'history';
+    render();
+    if (state.allowance === null || isNaN(state.allowance)) {
+      setTimeout(openSettingsPanel, 300);
+    }
+  }
+
+  function openProfilePanel() {
+    panel.innerHTML = '<h2>Switch profile</h2>' +
+      PROFILES.map(function (p) {
+        var active = p === activeProfile;
+        return '<button type="button" class="btn ' + (active ? 'btn-primary' : 'btn-secondary') +
+          '" style="width:100%;margin-bottom:8px;text-align:left;" data-profile="' + p + '">' +
+          PROFILE_ICONS[p] + ' ' + PROFILE_LABELS[p] + (active ? ' ✓' : '') + '</button>';
+      }).join('') +
+      '<button type="button" class="btn btn-secondary" id="cancelProfile" style="width:100%;">Cancel</button>';
+    showPanel();
+    panel.querySelectorAll('[data-profile]').forEach(function (btn) {
+      btn.addEventListener('click', function () { switchProfile(btn.dataset.profile); });
+    });
+    document.getElementById('cancelProfile').addEventListener('click', closePanel);
+  }
+
   function openSettingsPanel() {
     var val = state.allowance !== null && !isNaN(state.allowance) ? state.allowance : '';
     panel.innerHTML =
@@ -2224,7 +2304,9 @@
       bucketConfigMarkup() +
       badgesMarkup() +
       categoriesManageMarkup() +
-      '<div id="oneDriveSection">' + oneDriveMarkup() + '</div>' +
+      (activeProfile === 'shared'
+        ? '<div id="oneDriveSection">' + oneDriveMarkup() + '</div>'
+        : '<div class="field"><label>Share with (OneDrive)</label><p class="hint">Only the Gemensam profile can be shared via OneDrive.</p></div>') +
       '<div class="panel-actions">' +
       '<button class="btn btn-secondary" id="cancelSettings">Cancel</button>' +
       '<button class="btn btn-primary" id="saveSettings">Save</button>' +
@@ -2552,6 +2634,7 @@
 
   document.getElementById('openAdd').addEventListener('click', function () { openAddPanel(); });
   document.getElementById('openSettings').addEventListener('click', openSettingsPanel);
+  document.getElementById('profilePill').addEventListener('click', openProfilePanel);
   document.getElementById('openAnalysis').addEventListener('click', function () {
     state.view = state.view === 'analysis' ? 'history' : 'analysis';
     closePanel();
@@ -2580,6 +2663,11 @@
   }
 
   // --- init ---
+  migrateToProfiles();
+  try {
+    var storedProfile = localStorage.getItem(ACTIVE_PROFILE_KEY);
+    if (storedProfile && PROFILES.indexOf(storedProfile) !== -1) activeProfile = storedProfile;
+  } catch (e) {}
   loadState();
   render();
   if (state.allowance === null || isNaN(state.allowance)) {
