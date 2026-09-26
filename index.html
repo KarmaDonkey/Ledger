@@ -532,6 +532,7 @@
   function BADGES_KEY() { return profileKey('badges'); }
   function DELETED_IDS_KEY() { return profileKey('deletedIds'); }
   function CATEGORY_MIGRATION_KEY() { return profileKey('categoriesMigrationV2'); }
+  function BUCKET_MODEL_MIGRATION_KEY() { return profileKey('bucketModelMigrationV2'); }
   var ONEDRIVE_KEY = 'ledger.onedrive.v1';
 
   // One-time migration: before profiles existed, everything lived under
@@ -562,7 +563,7 @@
   var NEW_CATEGORIES_V2 = ['Take-away', 'Fika', 'Kläder'];
   var DEFAULT_CATEGORIES = ['Mat', 'Transport', 'Nöje', 'Räkningar', 'Övrigt', 'Take-away', 'Fika', 'Kläder'];
   var UNCATEGORIZED = 'Okategoriserad';
-  var BUCKET_LABELS = { everyday: 'Everyday', fun: 'Fun' };
+  var BUCKET_LABELS = { planned: 'Planned', fun: 'Fun' };
   var FUN_MILESTONES = [20, 40, 60, 80, 100];
   function funMilestoneBadgeId(pct) { return 'funMilestone' + pct; }
   function funMilestoneVariant(pct) {
@@ -570,10 +571,10 @@
     if (pct >= 60) return 'sunglasses';
     return 'plain';
   }
-  var APP_VERSION = '2.8';
+  var APP_VERSION = '2.9';
   var state = {
     entries: [], allowance: null, categories: [], monthStartDay: 1, view: 'history',
-    buckets: { trackingStart: null, everydayTarget: null, funTarget: null, funNote: '' }, badges: [],
+    buckets: { trackingStart: null, funTarget: null, funNote: '', settlements: [] }, badges: [],
     deletedIds: []
   };
   // Shared with (OneDrive): clientId/refreshToken/remoteRef/lastSyncedAt/lastEtag/accountLabel
@@ -600,6 +601,41 @@
       (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
   }
 
+  // One-time migration from the old two-bucket model (Everyday target +
+  // indefinite tracking pool) to the period-buffer model: old "everyday"
+  // cash-outs become "planned purchases"; the old Fun balance (computed
+  // with the pre-migration formula, using data that's about to be
+  // replaced) is preserved as a seed credit in the new settlements list.
+  function migrateBucketsToPeriodModel() {
+    var old = state.buckets || {};
+    var oldFunBalance = 0;
+    if (state.allowance !== null && !isNaN(state.allowance) && old.trackingStart) {
+      var start = old.trackingStart, end = todayKey();
+      var untaggedSpent = state.entries
+        .filter(function (e) { return e.date >= start && e.date <= end && !e.bucket; })
+        .reduce(function (s, e) { return s + e.amount; }, 0);
+      var days = Math.max(0, Math.round((new Date(end + 'T00:00:00') - new Date(start + 'T00:00:00')) / 86400000) + 1);
+      var pool = state.allowance * days - untaggedSpent;
+      var oldTarget = old.everydayTarget;
+      var effectiveTarget = (oldTarget !== null && oldTarget !== undefined && !isNaN(oldTarget) && oldTarget > 0) ? oldTarget : 0;
+      var funShare = Math.max(0, pool - effectiveTarget);
+      var funCashedOut = state.entries.filter(function (e) { return e.bucket === 'fun'; })
+        .reduce(function (s, e) { return s + e.amount; }, 0);
+      oldFunBalance = funShare - funCashedOut;
+    }
+    state.entries.forEach(function (e) { if (e.bucket === 'everyday') e.bucket = 'planned'; });
+    state.buckets = {
+      trackingStart: old.trackingStart || null,
+      funTarget: old.funTarget !== undefined ? old.funTarget : null,
+      funNote: old.funNote || '',
+      settlements: oldFunBalance > 0.005
+        ? [{ periodKey: '__migration__', bufferAtEnd: 0, takenFromFun: 0, toFun: oldFunBalance, carryToNext: 0, settledAt: Date.now() }]
+        : []
+    };
+    saveBuckets();
+    saveEntries();
+  }
+
   function loadState() {
     try {
       var rawEntries = localStorage.getItem(STORE_KEY());
@@ -624,10 +660,17 @@
     } catch (e) { state.monthStartDay = 1; }
     try {
       var rawBuckets = localStorage.getItem(BUCKETS_KEY());
-      state.buckets = rawBuckets ? JSON.parse(rawBuckets) : { trackingStart: null, everydayTarget: null, funTarget: null, funNote: '' };
-      if (state.buckets.funTarget === undefined) state.buckets.funTarget = null;
-      if (state.buckets.funNote === undefined) state.buckets.funNote = '';
-    } catch (e) { state.buckets = { trackingStart: null, everydayTarget: null, funTarget: null, funNote: '' }; }
+      state.buckets = rawBuckets ? JSON.parse(rawBuckets) : { trackingStart: null, funTarget: null, funNote: '', settlements: [] };
+    } catch (e) { state.buckets = { trackingStart: null, funTarget: null, funNote: '', settlements: [] }; }
+    try {
+      if (!localStorage.getItem(BUCKET_MODEL_MIGRATION_KEY())) {
+        migrateBucketsToPeriodModel();
+        localStorage.setItem(BUCKET_MODEL_MIGRATION_KEY(), '1');
+      }
+    } catch (e) {}
+    if (state.buckets.funTarget === undefined) state.buckets.funTarget = null;
+    if (state.buckets.funNote === undefined) state.buckets.funNote = '';
+    if (!state.buckets.settlements) state.buckets.settlements = [];
     try {
       var rawBadges = localStorage.getItem(BADGES_KEY());
       state.badges = rawBadges ? JSON.parse(rawBadges) : [];
@@ -1093,14 +1136,14 @@
   // a running (allowance - spent) total day by day, up to today, against
   // a dashed zero-line reference (spanning the full period) showing where
   // "exactly on budget" would sit.
-  function budgetTrendChartHtml(period, days, budgetItems) {
+  function budgetTrendChartHtml(period, days, budgetItems, startValue) {
     if (state.allowance === null || isNaN(state.allowance)) return '';
     var byDate = {};
     budgetItems.forEach(function (e) { byDate[e.date] = (byDate[e.date] || 0) + e.amount; });
     var today = new Date();
     today.setHours(0, 0, 0, 0);
     var series = [];
-    var cum = 0;
+    var cum = startValue || 0;
     for (var i = 0; i < days; i++) {
       var d = new Date(period.start);
       d.setDate(period.start.getDate() + i);
@@ -1458,60 +1501,211 @@
   }
 
   // ---------------------------------------------------------------
-  // Buckets: a priority savings system. Every day's (allowance - spend)
-  // on untagged entries adds to a shared pool. That pool fills the
-  // Everyday bucket up to its target first, then overflows into Fun.
-  // Logging an expense "from" a bucket subtracts it from that bucket's
-  // balance and excludes it from the normal budget/streak math, since
-  // it's funded from savings rather than that day's allowance.
+  // Period buffer: each month period (per monthStartDay) builds a buffer
+  // from allowance minus spend so far, starting from whatever was carried
+  // in when the previous period was settled. Logging an expense as a
+  // "planned purchase" counts fully against this buffer instead of the
+  // daily allowance, so it doesn't break the streak — but only if the
+  // buffer can actually cover it. A "From Fun" expense draws from the
+  // separate long-term Fun pot instead, and never touches the buffer.
+  // At the end of each period the user is asked how much of a surplus to
+  // carry forward (the rest goes to Fun), or — for a deficit — whether to
+  // cover it from Fun and whether to carry or zero what's left.
   // ---------------------------------------------------------------
-  function bucketTrackingDays() {
-    if (!state.buckets.trackingStart) return 0;
-    var start = new Date(state.buckets.trackingStart + 'T00:00:00');
-    var end = new Date(todayKey() + 'T00:00:00');
-    return Math.max(0, Math.round((end - start) / 86400000) + 1);
+  function currentMonthPeriod() {
+    return getMonthPeriod(new Date(), state.monthStartDay);
   }
 
-  function bucketPool() {
-    if (state.allowance === null || isNaN(state.allowance) || !state.buckets.trackingStart) return 0;
-    var start = state.buckets.trackingStart;
-    var end = todayKey();
-    var untaggedSpent = state.entries
-      .filter(function (e) { return e.date >= start && e.date <= end && !e.bucket; })
+  function periodKeyFor(period) {
+    return dayKey(period.start);
+  }
+
+  function settlementFor(periodKey) {
+    return state.buckets.settlements.filter(function (s) { return s.periodKey === periodKey; })[0] || null;
+  }
+
+  function carryInForPeriod(period) {
+    var prevAnchor = shiftPeriod(period, 'month', state.monthStartDay, -1);
+    var prevPeriod = getMonthPeriod(prevAnchor, state.monthStartDay);
+    var settlement = settlementFor(periodKeyFor(prevPeriod));
+    return settlement ? settlement.carryToNext : 0;
+  }
+
+  function periodBufferItems(period) {
+    return entriesInPeriod(period).filter(function (e) { return e.bucket !== 'fun'; });
+  }
+
+  function periodElapsedDays(period) {
+    var today = new Date();
+    today.setHours(0, 0, 0, 0);
+    var days = Math.round((period.end - period.start) / 86400000) + 1;
+    if (period.start.getTime() > today.getTime()) return { elapsedDays: 0, days: days };
+    if (period.end.getTime() <= today.getTime()) return { elapsedDays: days, days: days };
+    return { elapsedDays: Math.round((today - period.start) / 86400000) + 1, days: days };
+  }
+
+  function periodBuffer(period) {
+    if (state.allowance === null || isNaN(state.allowance)) return 0;
+    var carryIn = carryInForPeriod(period);
+    var elapsed = periodElapsedDays(period).elapsedDays;
+    var spent = periodTotal(periodBufferItems(period));
+    return carryIn + state.allowance * elapsed - spent;
+  }
+
+  function funBalance() {
+    var total = 0;
+    state.buckets.settlements.forEach(function (s) { total += (s.toFun || 0) - (s.takenFromFun || 0); });
+    var cashedOut = state.entries.filter(function (e) { return e.bucket === 'fun'; })
       .reduce(function (s, e) { return s + e.amount; }, 0);
-    return state.allowance * bucketTrackingDays() - untaggedSpent;
+    return total - cashedOut;
   }
 
-  function bucketCashedOut(bucket) {
-    return state.entries.filter(function (e) { return e.bucket === bucket; })
-      .reduce(function (s, e) { return s + e.amount; }, 0);
+  // Can `amount` (signed; negative for a refund) be tagged against
+  // `tag` ('planned' or 'fun')? For an edit, the entry's own prior
+  // contribution to that same tag is added back first, so re-saving an
+  // unchanged tagged entry never falsely fails the check.
+  function bucketTagAvailable(tag, amount, date, isEdit, existingEntry) {
+    if (tag === 'planned') {
+      var anchor = new Date(date + 'T00:00:00');
+      var period = getMonthPeriod(anchor, state.monthStartDay);
+      var carryIn = carryInForPeriod(period);
+      var elapsed = periodElapsedDays(period).elapsedDays;
+      var available = carryIn + (state.allowance || 0) * elapsed;
+      var items = periodBufferItems(period).filter(function (it) { return !isEdit || it.id !== existingEntry.id; });
+      var spent = periodTotal(items);
+      return (spent + amount) <= available + 0.005;
+    }
+    if (tag === 'fun') {
+      var bal = funBalance();
+      if (isEdit && existingEntry.bucket === 'fun') bal += existingEntry.amount;
+      return amount <= bal + 0.005;
+    }
+    return true;
   }
 
-  function bucketBalance(bucket) {
-    var pool = bucketPool();
-    var target = state.buckets.everydayTarget;
-    var effectiveTarget = (target !== null && !isNaN(target) && target > 0) ? target : 0;
-    var everydayShare = Math.min(pool, effectiveTarget);
-    var funShare = Math.max(0, pool - effectiveTarget);
-    var raw = bucket === 'everyday' ? everydayShare : funShare;
-    return raw - bucketCashedOut(bucket);
+  function bufferCardHtml() {
+    var buffer = periodBuffer(currentMonthPeriod());
+    var over = buffer < 0;
+    return '<div class="bucket-card">' +
+      '<div class="bucket-card-label">This period</div>' +
+      '<div class="bucket-card-amt ' + (over ? 'over' : 'good') + '">' + formatMoney(buffer) + '</div>' +
+      '<p class="hint" style="margin-top:4px;">buffer for planned purchases</p>' +
+      '</div>';
   }
 
-  function bucketCardHtml(bucket) {
-    var balance = bucketBalance(bucket);
-    var target = bucket === 'everyday' ? state.buckets.everydayTarget : state.buckets.funTarget;
-    var note = bucket === 'fun' ? state.buckets.funNote : '';
+  function funCardHtml() {
+    var balance = funBalance();
+    var target = state.buckets.funTarget;
+    var note = state.buckets.funNote;
     var hasTarget = target !== null && !isNaN(target) && target > 0;
     var over = balance < 0;
     var pct = hasTarget ? Math.max(0, Math.min(100, Math.round(balance / target * 100))) : 0;
     return '<div class="bucket-card">' +
-      '<div class="bucket-card-label">' + BUCKET_LABELS[bucket] + '</div>' +
+      '<div class="bucket-card-label">Fun</div>' +
       '<div class="bucket-card-amt ' + (over ? 'over' : 'good') + '">' + formatMoney(balance) + '</div>' +
       (hasTarget
         ? '<div class="cat-bar"><div class="cat-bar-fill' + (over ? ' over' : '') + '" style="width:' + (over ? 100 : pct) + '%"></div></div>' +
           '<p class="hint" style="margin-top:4px;">of ' + formatMoney(target) + (note ? ' — ' + note.replace(/</g, '&lt;') : '') + '</p>'
         : '') +
       '</div>';
+  }
+
+  function recordSettlement(period, data) {
+    state.buckets.settlements.push({
+      periodKey: periodKeyFor(period),
+      bufferAtEnd: data.bufferAtEnd,
+      takenFromFun: data.takenFromFun,
+      toFun: data.toFun,
+      carryToNext: data.carryToNext,
+      settledAt: Date.now()
+    });
+    saveBuckets();
+  }
+
+  // Only ever looks one period back — if the app hasn't been opened for
+  // several months in a row, older gaps are left unsettled (their buffer
+  // is simply not carried forward) rather than prompting through a
+  // backlog.
+  function findUnsettledPeriod() {
+    if (state.allowance === null || isNaN(state.allowance) || !state.buckets.trackingStart) return null;
+    var current = currentMonthPeriod();
+    var candidate = getMonthPeriod(shiftPeriod(current, 'month', state.monthStartDay, -1), state.monthStartDay);
+    var trackingStart = new Date(state.buckets.trackingStart + 'T00:00:00');
+    if (candidate.end.getTime() < trackingStart.getTime()) return null;
+    if (settlementFor(periodKeyFor(candidate))) return null;
+    return candidate;
+  }
+
+  function openSettlementPanel(period) {
+    var buffer = periodBuffer(period);
+    var label = formatPeriodLabel('month', period);
+    if (Math.abs(buffer) < 0.005) {
+      recordSettlement(period, { bufferAtEnd: 0, takenFromFun: 0, toFun: 0, carryToNext: 0 });
+      render();
+      return;
+    }
+    if (buffer > 0) {
+      panel.innerHTML = '<h2>Period ended</h2>' +
+        '<p class="hint">' + label + ' ended ' + formatMoney(buffer) + ' under budget. How much do you want to carry into the new period? The rest goes to Fun.</p>' +
+        '<div class="field"><label for="carryAmountInput">Carry forward</label>' +
+        '<input type="text" inputmode="decimal" id="carryAmountInput" class="mono-input" value="' + buffer.toFixed(2).replace('.', ',') + '"></div>' +
+        '<p class="hint" id="toFunPreview"></p>' +
+        '<div class="panel-actions"><button class="btn btn-primary" id="confirmSettlement" style="width:100%;">Confirm</button></div>';
+      showPanel();
+      var input = document.getElementById('carryAmountInput');
+      function clamp(v) { return Math.max(0, Math.min(buffer, isNaN(v) ? 0 : v)); }
+      function updatePreview() {
+        var v = clamp(parseFloat(input.value.replace(',', '.')));
+        document.getElementById('toFunPreview').textContent = formatMoney(Math.max(0, buffer - v)) + ' goes to Fun.';
+      }
+      input.addEventListener('input', updatePreview);
+      updatePreview();
+      document.getElementById('confirmSettlement').addEventListener('click', function () {
+        var v = clamp(parseFloat(input.value.replace(',', '.')));
+        recordSettlement(period, { bufferAtEnd: buffer, takenFromFun: 0, toFun: buffer - v, carryToNext: v });
+        closePanel();
+        render();
+      });
+    } else {
+      panel.innerHTML = '<h2>Period ended</h2>' +
+        '<p class="hint">' + label + ' ended ' + formatMoney(Math.abs(buffer)) + ' over budget. Cover the deficit from Fun (' + formatMoney(funBalance()) + ' available)?</p>' +
+        '<div class="panel-actions">' +
+        '<button class="btn btn-secondary" id="deficitNo" style="flex:1;">No</button>' +
+        '<button class="btn btn-primary" id="deficitYes" style="flex:1;">Yes</button>' +
+        '</div>';
+      showPanel();
+      function proceedToStep2(takenFromFun) {
+        var remaining = buffer + takenFromFun;
+        if (remaining >= -0.005) {
+          recordSettlement(period, { bufferAtEnd: buffer, takenFromFun: takenFromFun, toFun: 0, carryToNext: 0 });
+          closePanel();
+          render();
+          return;
+        }
+        panel.innerHTML = '<h2>Period ended</h2>' +
+          '<p class="hint">' + formatMoney(Math.abs(remaining)) + ' of the deficit remains. Carry it into the new period, or clear it to zero?</p>' +
+          '<div class="panel-actions">' +
+          '<button class="btn btn-secondary" id="zeroDeficit" style="flex:1;">Clear to zero</button>' +
+          '<button class="btn btn-primary" id="carryDeficit" style="flex:1;">Carry it over</button>' +
+          '</div>';
+        showPanel();
+        document.getElementById('zeroDeficit').addEventListener('click', function () {
+          recordSettlement(period, { bufferAtEnd: buffer, takenFromFun: takenFromFun, toFun: 0, carryToNext: 0 });
+          closePanel();
+          render();
+        });
+        document.getElementById('carryDeficit').addEventListener('click', function () {
+          recordSettlement(period, { bufferAtEnd: buffer, takenFromFun: takenFromFun, toFun: 0, carryToNext: remaining });
+          closePanel();
+          render();
+        });
+      }
+      document.getElementById('deficitNo').addEventListener('click', function () { proceedToStep2(0); });
+      document.getElementById('deficitYes').addEventListener('click', function () {
+        var taken = Math.min(funBalance(), Math.abs(buffer));
+        proceedToStep2(taken);
+      });
+    }
   }
 
   function openCapybaraLightbox(variant, title, subtitle, muted) {
@@ -1544,7 +1738,7 @@
       var todayPeriod = getMonthPeriod(new Date(), state.monthStartDay);
       var prevAnchor = shiftPeriod(todayPeriod, 'month', state.monthStartDay, -1);
       var prevPeriod = getMonthPeriod(prevAnchor, state.monthStartDay);
-      var prevItems = entriesInPeriod(prevPeriod).filter(function (e) { return !e.bucket; });
+      var prevItems = entriesInPeriod(prevPeriod).filter(function (e) { return e.bucket !== 'fun'; });
       if (prevItems.length > 0) {
         var prevTotal = periodTotal(prevItems);
         var prevDays = Math.round((prevPeriod.end - prevPeriod.start) / 86400000) + 1;
@@ -1556,7 +1750,7 @@
 
     var funTarget = state.buckets.funTarget;
     if (funTarget !== null && !isNaN(funTarget) && funTarget > 0) {
-      var funBal = bucketBalance('fun');
+      var funBal = funBalance();
       FUN_MILESTONES.forEach(function (pct) {
         if (funBal >= funTarget * (pct / 100)) unlock(funMilestoneBadgeId(pct));
       });
@@ -1570,7 +1764,7 @@
     var type = analysisState.periodType;
     var period = getPeriod(type, analysisState.anchor, state.monthStartDay);
     var items = entriesInPeriod(period);
-    var budgetItems = items.filter(function (e) { return !e.bucket; });
+    var budgetItems = items.filter(function (e) { return e.bucket !== 'fun'; });
     var total = periodTotal(budgetItems);
     var days = Math.round((period.end - period.start) / 86400000) + 1;
     var today = new Date();
@@ -1592,12 +1786,10 @@
         return '<button type="button" class="type-btn' + (t === type ? ' active' : '') + '" data-type="' + t + '">' + lbl + '</button>';
       }).join('') + '</div>';
 
-    if (!state.buckets.trackingStart) {
-      html += '<div class="goal-block"><p class="hint">Set up the Everyday/Fun buckets in Settings to start saving toward purchases.</p></div>';
-    } else if (!hasAllowance) {
-      html += '<div class="goal-block"><p class="hint">Set a daily allowance to start saving into your buckets.</p></div>';
+    if (!hasAllowance) {
+      html += '<div class="goal-block"><p class="hint">Set a daily allowance in Settings to start tracking your buffer.</p></div>';
     } else {
-      html += '<div class="goal-block"><div class="bucket-row">' + bucketCardHtml('everyday') + bucketCardHtml('fun') + '</div></div>';
+      html += '<div class="goal-block"><div class="bucket-row">' + bufferCardHtml() + funCardHtml() + '</div></div>';
     }
 
     html += '<div class="period-nav">' +
@@ -1627,7 +1819,8 @@
     }
 
     if (type !== 'day' && !analysisState.drillCategory) {
-      html += budgetTrendChartHtml(period, days, budgetItems);
+      var chartStart = (type === 'month') ? carryInForPeriod(period) : 0;
+      html += budgetTrendChartHtml(period, days, budgetItems, chartStart);
     }
 
     if (analysisState.drillCategory) {
@@ -1897,12 +2090,13 @@
   }
 
   function bucketChipsHtml(selected) {
-    var options = [{ id: '', label: 'None' }, { id: 'everyday', label: 'Everyday' }, { id: 'fun', label: 'Fun' }];
+    var options = [{ id: '', label: 'None' }, { id: 'planned', label: 'Planned purchase' }, { id: 'fun', label: 'From Fun' }];
     var html = '<div class="field"><label>Fund from</label><div class="cat-chips" id="bucketChips">';
     options.forEach(function (o) {
       html += '<button type="button" class="cat-chip' + ((selected || '') === o.id ? ' active' : '') + '" data-bucket="' + o.id + '">' + o.label + '</button>';
     });
-    html += '</div><p class="hint">A tagged expense is paid from that bucket’s savings and won’t count against today’s budget or your streak.</p></div>';
+    html += '</div><p class="hint">A planned purchase counts against this period’s buffer instead of today’s allowance. A Fun purchase draws from your Fun savings. Either way it won’t count against today’s budget or your streak — but only if there’s enough available.</p>' +
+      '<div id="bucketTagWarning"></div></div>';
     return html;
   }
 
@@ -1979,6 +2173,8 @@
         selectedBucket = chip.dataset.bucket || null;
         document.querySelectorAll('#bucketChips .cat-chip').forEach(function (c) { c.classList.remove('active'); });
         chip.classList.add('active');
+        var warnEl = document.getElementById('bucketTagWarning');
+        if (warnEl) warnEl.innerHTML = '';
       });
     });
 
@@ -2012,6 +2208,12 @@
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) date = todayKey();
       if (isNaN(magnitude) || magnitude === 0) { document.getElementById('amountInput').focus(); return; }
       var amount = Math.round(magnitude * 100) / 100 * (entryType === 'refund' ? -1 : 1);
+
+      if (selectedBucket && !bucketTagAvailable(selectedBucket, amount, date, isEdit, existingEntry)) {
+        var warnEl = document.getElementById('bucketTagWarning');
+        if (warnEl) warnEl.innerHTML = '<p class="dup-warning">Not enough left in ' + BUCKET_LABELS[selectedBucket] + ' to cover ' + formatMoney(Math.abs(amount)) + '.</p>';
+        return;
+      }
 
       var dup = findDuplicate({ date: date, amount: amount, description: desc }, isEdit ? existingEntry.id : null);
       if (dup) {
@@ -2071,29 +2273,23 @@
   }
 
   function bucketConfigMarkup() {
-    var target = state.buckets.everydayTarget;
     var funTarget = state.buckets.funTarget;
     var funNote = state.buckets.funNote || '';
-    var start = state.buckets.trackingStart || todayKey();
-    return '<div class="field"><label for="everydayTargetInput">Everyday bucket target</label>' +
-      '<input type="text" inputmode="decimal" id="everydayTargetInput" class="mono-input" placeholder="e.g. 1500" autocomplete="off" value="' + (target !== null && !isNaN(target) ? target : '') + '">' +
-      '<p class="hint">Savings fill this bucket first. Anything extra overflows into the Fun bucket.</p></div>' +
-      '<div class="field"><label for="trackingStartInput">Tracking starts on</label>' +
-      '<input type="date" id="trackingStartInput" value="' + start + '"></div>' +
-      '<div class="field"><label for="funTargetInput">Fun bucket goal (optional)</label>' +
+    return '<div class="field"><label>This period’s buffer</label><div class="bucket-row">' + bufferCardHtml() + funCardHtml() + '</div>' +
+      '<p class="hint" style="margin-top:6px;">The buffer builds automatically from your daily allowance. At the end of each period you’ll be asked how much to carry forward.</p></div>' +
+      '<div class="field"><label for="funTargetInput">Fun goal (optional)</label>' +
       '<input type="text" inputmode="decimal" id="funTargetInput" class="mono-input" placeholder="e.g. 3000" autocomplete="off" value="' + (funTarget !== null && !isNaN(funTarget) ? funTarget : '') + '"></div>' +
       '<div class="field"><label for="funNoteInput">What are you saving for? (optional)</label>' +
       '<input type="text" id="funNoteInput" placeholder="e.g. Playstation" autocomplete="off" value="' + funNote.replace(/"/g, '&quot;') + '"></div>' +
-      '<div class="field"><label>Buckets</label><div class="bucket-row">' + bucketCardHtml('everyday') + bucketCardHtml('fun') + '</div></div>' +
       funMilestonesMarkup() +
-      '<div class="field"><label>Cash-out history</label><div id="bucketCashoutList">' + bucketCashoutHistoryMarkup() + '</div></div>';
+      '<div class="field"><label>Planned / Fun history</label><div id="bucketCashoutList">' + bucketCashoutHistoryMarkup() + '</div></div>';
   }
 
   function badgeRowHtml() {
     var defs = [
       { id: 'monthUnderBudget', variant: 'plain', label: 'A full month under budget' },
       { id: 'streak7', variant: 'sunglasses', label: '7-day streak' },
-      { id: 'bucketCashout', variant: 'crown', label: 'First bucket cash-out' }
+      { id: 'bucketCashout', variant: 'crown', label: 'First planned or Fun purchase' }
     ];
     return defs.map(function (d) {
       var earned = state.badges.indexOf(d.id) !== -1;
@@ -2330,11 +2526,7 @@
         state.monthStartDay = Math.min(31, Math.max(1, startRaw));
         saveMonthStartDay();
       }
-      var targetRaw = document.getElementById('everydayTargetInput').value.replace(',', '.').trim();
-      var target = targetRaw === '' ? null : parseFloat(targetRaw);
-      if (target !== null && (isNaN(target) || target < 0)) target = null;
-      state.buckets.everydayTarget = target;
-      state.buckets.trackingStart = document.getElementById('trackingStartInput').value || todayKey();
+      if (!state.buckets.trackingStart) state.buckets.trackingStart = todayKey();
       var funTargetRaw = document.getElementById('funTargetInput').value.replace(',', '.').trim();
       var funTarget = funTargetRaw === '' ? null : parseFloat(funTargetRaw);
       if (funTarget !== null && (isNaN(funTarget) || funTarget < 0)) funTarget = null;
@@ -2672,6 +2864,9 @@
   render();
   if (state.allowance === null || isNaN(state.allowance)) {
     setTimeout(openSettingsPanel, 300);
+  } else {
+    var unsettled = findUnsettledPeriod();
+    if (unsettled) setTimeout(function () { openSettlementPanel(unsettled); }, 300);
   }
   initScanning();
   handleOneDriveRedirect().then(function (handledRedirect) {
