@@ -260,6 +260,15 @@
     cursor: pointer;
   }
   .scan-upload svg { width: 18px; height: 18px; }
+  .scan-upload + .scan-upload { margin-top: 10px; }
+  .scan-upload.scan-upload-primary { border-style: solid; border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .scan-hint { font-size: 13px; color: var(--ink-soft); line-height: 1.45; margin: 10px 0 0; }
+  .scan-hint.scan-hint-err { color: var(--over); }
+  .scan-paste-zone {
+    margin-top: 10px; min-height: 64px; padding: 14px; border: 1px dashed var(--ink-faint); border-radius: 12px;
+    font-size: 14px; color: var(--ink); overflow: hidden; -webkit-user-select: text; user-select: text;
+  }
+  .scan-paste-zone:empty::before { content: attr(data-placeholder); color: var(--ink-soft); }
   .scan-status { font-size: 14px; color: var(--ink-soft); text-align: center; padding: 14px 0; }
   .scan-rows { max-height: 44vh; overflow-y: auto; margin: 4px 0 14px; }
   .scan-row { display: flex; align-items: center; gap: 8px; padding: 9px 0; border-bottom: 1px solid var(--hairline); }
@@ -571,7 +580,7 @@
     if (pct >= 60) return 'sunglasses';
     return 'plain';
   }
-  var APP_VERSION = '3.0';
+  var APP_VERSION = '3.1';
   var state = {
     entries: [], allowance: null, categories: [], monthStartDay: 1, view: 'history',
     buckets: { trackingStart: null, funTarget: null, funNote: '', settlements: [] }, badges: [],
@@ -2552,9 +2561,14 @@
       ? 'Claude reads the amounts and descriptions so you can check them before they\u2019re added.'
       : 'The text is read on your device and the image is never uploaded. The first time, a few MB of reading data are downloaded. Check the result before it\u2019s added.';
     return '<p class="scan-intro">Pick a screenshot of your bank app\u2019s transaction list. ' + who + '</p>' +
-      '<div class="scan-upload" id="scanUploadTrigger">' +
+      '<div class="scan-upload scan-upload-primary" id="scanPasteTrigger" role="button" tabindex="0">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 4h6v3H9zM8 5.5H6.5A1.5 1.5 0 0 0 5 7v12a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 19 19V7a1.5 1.5 0 0 0-1.5-1.5H16"/></svg>' +
+      'Paste screenshot</div>' +
+      '<div class="scan-upload" id="scanUploadTrigger" role="button" tabindex="0">' +
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 16V4m0 0-4 4m4-4 4 4M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>' +
-      'Choose a screenshot</div>';
+      'Choose a screenshot or take a photo</div>' +
+      '<p class="scan-hint" id="scanPasteHint">Copied a screenshot? Tap Paste screenshot, or press Ctrl/\u2318+V.</p>' +
+      '<div class="scan-paste-zone" id="scanPasteZone" contenteditable="true" role="textbox" aria-label="Paste a screenshot here" data-placeholder="Press and hold here, then choose Paste" hidden></div>';
   }
 
   function importIntroMarkup() {
@@ -2709,10 +2723,70 @@
     });
   }
 
+  function imageFromClipboardData(data) {
+    if (!data) return null;
+    var files = data.files || [];
+    for (var i = 0; i < files.length; i++) if (/^image\//.test(files[i].type)) return files[i];
+    var items = data.items || [];
+    for (var j = 0; j < items.length; j++) {
+      if (items[j].kind === 'file' && /^image\//.test(items[j].type)) return items[j].getAsFile();
+    }
+    return null;
+  }
+
+  function showPasteHint(text, isErr, showZone) {
+    var hint = document.getElementById('scanPasteHint');
+    if (hint) { hint.textContent = text; hint.className = 'scan-hint' + (isErr ? ' scan-hint-err' : ''); }
+    var zone = document.getElementById('scanPasteZone');
+    if (zone && showZone) { zone.hidden = false; zone.focus(); }
+  }
+
+  async function pasteScreenshotFromClipboard() {
+    if (!navigator.clipboard || !navigator.clipboard.read) {
+      showPasteHint('This browser can\u2019t paste with the button. Press and hold in the box below, then choose Paste.', false, true);
+      return;
+    }
+    try {
+      var items = await navigator.clipboard.read();
+      for (var i = 0; i < items.length; i++) {
+        var type = items[i].types.filter(function (t) { return /^image\//.test(t); })[0];
+        if (type) {
+          var blob = await items[i].getType(type);
+          handleScanFile(new File([blob], 'screenshot', { type: blob.type }));
+          return;
+        }
+      }
+      showPasteHint('No screenshot found on the clipboard. Take a screenshot, tap Copy in its preview, then try again.', true, true);
+    } catch (e) {
+      showPasteHint('Couldn\u2019t read the clipboard. Press and hold in the box below, then choose Paste.', false, true);
+    }
+  }
+
   function bindScanUpload() {
     var trigger = document.getElementById('scanUploadTrigger');
     if (trigger) trigger.addEventListener('click', function () { scanFile.click(); });
+    var pasteTrigger = document.getElementById('scanPasteTrigger');
+    if (pasteTrigger) pasteTrigger.addEventListener('click', pasteScreenshotFromClipboard);
+    [trigger, pasteTrigger].forEach(function (el) {
+      if (el) el.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); el.click(); }
+      });
+    });
+    var zone = document.getElementById('scanPasteZone');
+    if (zone) zone.addEventListener('input', function () { zone.innerHTML = ''; });
   }
+
+  document.addEventListener('paste', function (ev) {
+    if (currentFlow !== 'scan' || !document.getElementById('scanUploadTrigger')) return;
+    var file = imageFromClipboardData(ev.clipboardData);
+    if (!file) {
+      var zone = document.getElementById('scanPasteZone');
+      if (zone && ev.target === zone) { ev.preventDefault(); showPasteHint('That wasn\u2019t a screenshot. Copy one first, then paste again.', true, false); }
+      return;
+    }
+    ev.preventDefault();
+    handleScanFile(file);
+  });
 
   function showScanStatus(text) {
     document.getElementById('scanBody').innerHTML = '<p class="scan-status">' + text + '</p>';
