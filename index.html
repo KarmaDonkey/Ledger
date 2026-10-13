@@ -542,6 +542,7 @@
   function DELETED_IDS_KEY() { return profileKey('deletedIds'); }
   function CATEGORY_MIGRATION_KEY() { return profileKey('categoriesMigrationV2'); }
   function BUCKET_MODEL_MIGRATION_KEY() { return profileKey('bucketModelMigrationV2'); }
+  function SETTINGS_META_KEY() { return profileKey('settingsMeta'); }
   var ONEDRIVE_KEY = 'ledger.onedrive.v1';
 
   // One-time migration: before profiles existed, everything lived under
@@ -580,11 +581,11 @@
     if (pct >= 60) return 'sunglasses';
     return 'plain';
   }
-  var APP_VERSION = '3.2';
+  var APP_VERSION = '3.3';
   var state = {
     entries: [], allowance: null, categories: [], monthStartDay: 1, view: 'history',
     buckets: { trackingStart: null, funTarget: null, funNote: '', settlements: [] }, badges: [],
-    deletedIds: []
+    deletedIds: [], settingsMeta: { allowance: 0, monthStartDay: 0, fun: 0, categories: 0 }
   };
   // Shared with (OneDrive): clientId/refreshToken/remoteRef/lastSyncedAt/lastEtag/accountLabel
   // persist to ONEDRIVE_KEY; accessToken/accessTokenExpiry/syncing/lastError are runtime-only.
@@ -710,6 +711,26 @@
         if (addedNewCategory) saveCategories();
       }
     } catch (e) {}
+    try {
+      var rawMeta = localStorage.getItem(SETTINGS_META_KEY());
+      if (rawMeta) {
+        var parsedMeta = JSON.parse(rawMeta);
+        ['allowance', 'monthStartDay', 'fun', 'categories'].forEach(function (f) {
+          state.settingsMeta[f] = typeof parsedMeta[f] === 'number' ? parsedMeta[f] : 0;
+        });
+      } else {
+        // First run with settings sync: values that were already customised count as edited now,
+        // untouched defaults stay at 0 so a synced value can replace them.
+        var nowStamp = Date.now();
+        state.settingsMeta = {
+          allowance: (state.allowance !== null && !isNaN(state.allowance)) ? nowStamp : 0,
+          monthStartDay: state.monthStartDay !== 1 ? nowStamp : 0,
+          fun: (state.buckets.funTarget !== null || state.buckets.funNote) ? nowStamp : 0,
+          categories: state.categories.slice().sort().join('|') !== DEFAULT_CATEGORIES.slice().sort().join('|') ? nowStamp : 0
+        };
+        saveSettingsMeta();
+      }
+    } catch (e) {}
     storageStatus.ok = storageSelfTest();
   }
   function saveEntries() {
@@ -764,6 +785,15 @@
       storageStatus.lastSaved = Date.now();
       try { localStorage.setItem(LAST_SAVED_KEY(), String(storageStatus.lastSaved)); } catch (e2) {}
     } catch (e) { storageStatus.ok = false; }
+  }
+
+  function saveSettingsMeta() {
+    try { localStorage.setItem(SETTINGS_META_KEY(), JSON.stringify(state.settingsMeta)); } catch (e) {}
+  }
+
+  function touchSetting(field) {
+    state.settingsMeta[field] = Date.now();
+    saveSettingsMeta();
   }
 
   function saveDeletedIds() {
@@ -1070,6 +1100,114 @@
     return { entries: entries, deletedIds: deletedIds };
   }
 
+  // Budget settings travel in the same OneDrive file as the entries. Each
+  // setting group carries the time it was last edited on purpose; the newer
+  // edit wins. Settlements are unioned by period; the earliest tracking
+  // start is kept.
+  var SETTING_GROUPS = ['allowance', 'monthStartDay', 'fun', 'categories'];
+
+  function buildSettingsPayload() {
+    return {
+      v: 1,
+      allowance: (state.allowance !== null && !isNaN(state.allowance)) ? state.allowance : null,
+      monthStartDay: state.monthStartDay,
+      categories: state.categories.slice(),
+      funTarget: state.buckets.funTarget === undefined ? null : state.buckets.funTarget,
+      funNote: state.buckets.funNote || '',
+      trackingStart: state.buckets.trackingStart || null,
+      settlements: state.buckets.settlements.map(function (x) { return Object.assign({}, x); }),
+      meta: Object.assign({}, state.settingsMeta)
+    };
+  }
+
+  function sanitizeSettings(r) {
+    if (!r || typeof r !== 'object') return null;
+    function num(v) { return typeof v === 'number' && isFinite(v); }
+    var meta = (r.meta && typeof r.meta === 'object') ? r.meta : {};
+    var out = { meta: {} };
+    SETTING_GROUPS.forEach(function (g) { out.meta[g] = num(meta[g]) ? meta[g] : 0; });
+    out.allowance = (num(r.allowance) && r.allowance >= 0) ? r.allowance : null;
+    out.monthStartDay = (num(r.monthStartDay) && r.monthStartDay >= 1 && r.monthStartDay <= 31) ? Math.floor(r.monthStartDay) : null;
+    var seen = {};
+    out.categories = Array.isArray(r.categories)
+      ? r.categories.filter(function (c) { return typeof c === 'string' && c.trim() && c.length <= 60; })
+          .map(function (c) { return c.trim(); })
+          .filter(function (c) { if (seen[c]) return false; seen[c] = true; return true; })
+      : null;
+    out.funTarget = (num(r.funTarget) && r.funTarget >= 0) ? r.funTarget : null;
+    out.funNote = typeof r.funNote === 'string' ? r.funNote.slice(0, 200) : '';
+    out.trackingStart = (typeof r.trackingStart === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(r.trackingStart)) ? r.trackingStart : null;
+    out.settlements = Array.isArray(r.settlements)
+      ? r.settlements.filter(function (x) {
+          return x && typeof x.periodKey === 'string' && num(x.bufferAtEnd) && num(x.takenFromFun) && num(x.toFun) && num(x.carryToNext) && num(x.settledAt);
+        }).map(function (x) {
+          return { periodKey: x.periodKey, bufferAtEnd: x.bufferAtEnd, takenFromFun: x.takenFromFun, toFun: x.toFun, carryToNext: x.carryToNext, settledAt: x.settledAt };
+        })
+      : [];
+    return out;
+  }
+
+  function mergeSettingsData(local, remoteRaw) {
+    var remote = sanitizeSettings(remoteRaw);
+    if (!remote) return local;
+    var lm = local.meta || {};
+    var out = {
+      v: 1, allowance: local.allowance, monthStartDay: local.monthStartDay, categories: local.categories,
+      funTarget: local.funTarget, funNote: local.funNote, trackingStart: local.trackingStart, settlements: [],
+      meta: { allowance: lm.allowance || 0, monthStartDay: lm.monthStartDay || 0, fun: lm.fun || 0, categories: lm.categories || 0 }
+    };
+    if (remote.meta.allowance >= out.meta.allowance && remote.allowance !== null) {
+      out.allowance = remote.allowance; out.meta.allowance = remote.meta.allowance;
+    }
+    if (remote.meta.monthStartDay >= out.meta.monthStartDay && remote.monthStartDay !== null) {
+      out.monthStartDay = remote.monthStartDay; out.meta.monthStartDay = remote.meta.monthStartDay;
+    }
+    if (remote.meta.categories >= out.meta.categories && remote.categories && remote.categories.length) {
+      out.categories = remote.categories; out.meta.categories = remote.meta.categories;
+    }
+    if (remote.meta.fun >= out.meta.fun) {
+      out.funTarget = remote.funTarget; out.funNote = remote.funNote; out.meta.fun = remote.meta.fun;
+    }
+    if (remote.trackingStart && (!local.trackingStart || remote.trackingStart < local.trackingStart)) out.trackingStart = remote.trackingStart;
+    var byKey = {};
+    (local.settlements || []).concat(remote.settlements).forEach(function (st) {
+      var existing = byKey[st.periodKey];
+      if (!existing) { byKey[st.periodKey] = st; return; }
+      if (st.periodKey === '__migration__') { if (st.toFun > existing.toFun) byKey[st.periodKey] = st; }
+      else if (st.settledAt > existing.settledAt) byKey[st.periodKey] = st;
+    });
+    out.settlements = Object.keys(byKey).map(function (k) { return byKey[k]; })
+      .sort(function (a, b) { return a.settledAt - b.settledAt; });
+    return out;
+  }
+
+  function applySettingsPayload(merged) {
+    var hadAllowance = state.allowance !== null && !isNaN(state.allowance);
+    if (merged.allowance !== null && merged.allowance !== undefined && state.allowance !== merged.allowance) {
+      state.allowance = merged.allowance;
+      saveAllowance();
+    }
+    if (merged.monthStartDay && state.monthStartDay !== merged.monthStartDay) {
+      state.monthStartDay = merged.monthStartDay;
+      saveMonthStartDay();
+    }
+    var cats = (merged.categories || state.categories).slice();
+    state.entries.forEach(function (e) { if (e.category && cats.indexOf(e.category) === -1) cats.push(e.category); });
+    if (JSON.stringify(cats) !== JSON.stringify(state.categories)) {
+      state.categories = cats;
+      saveCategories();
+    }
+    var before = JSON.stringify(state.buckets);
+    state.buckets.funTarget = merged.funTarget === undefined ? null : merged.funTarget;
+    state.buckets.funNote = merged.funNote || '';
+    state.buckets.trackingStart = merged.trackingStart || state.buckets.trackingStart || null;
+    state.buckets.settlements = merged.settlements.slice();
+    if (JSON.stringify(state.buckets) !== before) saveBuckets();
+    state.settingsMeta = Object.assign({}, merged.meta);
+    saveSettingsMeta();
+    if (!hadAllowance && state.allowance !== null && !isNaN(state.allowance) && document.getElementById('allowanceInput')) closePanel();
+  }
+
   function oneDriveStatusText() {
     var lines = [oneDrive.accountLabel ? 'Signed in as ' + oneDrive.accountLabel : 'Signed in'];
     lines.push(oneDrive.syncing ? 'Syncing…' : (oneDrive.lastSyncedAt ? 'Last synced ' + formatTimestamp(oneDrive.lastSyncedAt) : 'Not synced yet'));
@@ -1108,7 +1246,8 @@
         state.deletedIds = merged.deletedIds;
         saveEntries();
         saveDeletedIds();
-        var result = await uploadLedgerFile(token, ref, { entries: state.entries, deletedIds: state.deletedIds }, remote.etag);
+        applySettingsPayload(mergeSettingsData(buildSettingsPayload(), remoteData.settings));
+        var result = await uploadLedgerFile(token, ref, { entries: state.entries, deletedIds: state.deletedIds, settings: buildSettingsPayload() }, remote.etag);
         if (!result.conflict) { oneDrive.lastEtag = result.etag; break; }
       }
       oneDrive.lastSyncedAt = Date.now();
@@ -1629,6 +1768,7 @@
       settledAt: Date.now()
     });
     saveBuckets();
+    scheduleSync();
   }
 
   // Only ever looks one period back — if the app hasn't been opened for
@@ -2363,9 +2503,11 @@
           var newName = inp.value.trim();
           if (!newName || newName === oldName) { inp.value = oldName; return; }
           state.categories[i] = newName;
-          state.entries.forEach(function (e) { if (e.category === oldName) e.category = newName; });
+          state.entries.forEach(function (e) { if (e.category === oldName) { e.category = newName; e.updatedAt = Date.now(); } });
           saveCategories();
           saveEntries();
+          touchSetting('categories');
+          scheduleSync();
         });
       });
       wrap.querySelectorAll('.cat-manage-del').forEach(function (btn) {
@@ -2373,9 +2515,11 @@
           var i = +btn.dataset.idx;
           var name = state.categories[i];
           state.categories.splice(i, 1);
-          state.entries.forEach(function (e) { if (e.category === name) e.category = null; });
+          state.entries.forEach(function (e) { if (e.category === name) { e.category = null; e.updatedAt = Date.now(); } });
           saveCategories();
           saveEntries();
+          touchSetting('categories');
+          scheduleSync();
           renderList();
         });
       });
@@ -2387,6 +2531,8 @@
       if (!name || state.categories.indexOf(name) !== -1) return;
       state.categories.push(name);
       saveCategories();
+      touchSetting('categories');
+      scheduleSync();
       inp.value = '';
       renderList();
     });
@@ -2486,7 +2632,7 @@
     state.view = 'history';
     render();
     if (state.allowance === null || isNaN(state.allowance)) {
-      setTimeout(openSettingsPanel, 300);
+      setTimeout(function () { if (state.allowance === null || isNaN(state.allowance)) openSettingsPanel(); }, 300);
     }
   }
 
@@ -2538,12 +2684,16 @@
       var raw = document.getElementById('allowanceInput').value.replace(',', '.');
       var v = parseFloat(raw);
       if (isNaN(v) || v < 0) { document.getElementById('allowanceInput').focus(); return; }
+      var prevAllowance = state.allowance, prevStartDay = state.monthStartDay;
+      var prevFunTarget = state.buckets.funTarget, prevFunNote = state.buckets.funNote || '';
       state.allowance = Math.round(v * 100) / 100;
       saveAllowance();
+      if (state.allowance !== prevAllowance) touchSetting('allowance');
       var startRaw = parseInt(document.getElementById('monthStartInput').value, 10);
       if (!isNaN(startRaw)) {
         state.monthStartDay = Math.min(31, Math.max(1, startRaw));
         saveMonthStartDay();
+        if (state.monthStartDay !== prevStartDay) touchSetting('monthStartDay');
       }
       if (!state.buckets.trackingStart) state.buckets.trackingStart = todayKey();
       var funTargetRaw = document.getElementById('funTargetInput').value.replace(',', '.').trim();
@@ -2552,6 +2702,7 @@
       state.buckets.funTarget = funTarget;
       state.buckets.funNote = document.getElementById('funNoteInput').value.trim();
       saveBuckets();
+      if (state.buckets.funTarget !== prevFunTarget || state.buckets.funNote !== prevFunNote) touchSetting('fun');
       var clientIdInput = document.getElementById('oneDriveClientIdInput');
       if (clientIdInput && clientIdInput.value.trim()) {
         oneDrive.clientId = clientIdInput.value.trim();
@@ -2559,6 +2710,7 @@
       }
       closePanel();
       render();
+      scheduleSync();
     });
     document.getElementById('exportCsvBtn').addEventListener('click', downloadCsv);
     bindCategoryManage();
@@ -3129,7 +3281,7 @@
   loadState();
   render();
   if (state.allowance === null || isNaN(state.allowance)) {
-    setTimeout(openSettingsPanel, 300);
+    setTimeout(function () { if (state.allowance === null || isNaN(state.allowance)) openSettingsPanel(); }, 300);
   } else {
     var unsettled = findUnsettledPeriod();
     if (unsettled) setTimeout(function () { openSettlementPanel(unsettled); }, 300);
