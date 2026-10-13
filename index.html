@@ -487,6 +487,9 @@
       <button type="button" class="profile-pill" id="profilePill"></button>
     </div>
     <div class="header-actions">
+      <a class="icon-btn" href="https://karmadonkey.github.io/Familjeappar/" aria-label="Familjeappar" title="Till Familjeappar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 11.5 12 4l8 7.5M6 10v9a1 1 0 0 0 1 1h3v-5h4v5h3a1 1 0 0 0 1-1v-9"/></svg>
+      </a>
       <button class="icon-btn" id="openAnalysis" aria-label="Analysis">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 19V5m5 14V9m5 10V13m5 6V7"/></svg>
       </button>
@@ -581,7 +584,7 @@
     if (pct >= 60) return 'sunglasses';
     return 'plain';
   }
-  var APP_VERSION = '3.3';
+  var APP_VERSION = '3.4';
   var state = {
     entries: [], allowance: null, categories: [], monthStartDay: 1, view: 'history',
     buckets: { trackingStart: null, funTarget: null, funNote: '', settlements: [] }, badges: [],
