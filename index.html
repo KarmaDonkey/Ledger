@@ -580,7 +580,7 @@
     if (pct >= 60) return 'sunglasses';
     return 'plain';
   }
-  var APP_VERSION = '3.1';
+  var APP_VERSION = '3.2';
   var state = {
     entries: [], allowance: null, categories: [], monthStartDay: 1, view: 'history',
     buckets: { trackingStart: null, funTarget: null, funNote: '', settlements: [] }, badges: [],
@@ -2401,7 +2401,9 @@
         '<p class="hint">One-time setup \u2014 needs a free Microsoft app registration first. Ask if you haven\u2019t set this up yet.</p>' +
         '<button type="button" class="btn btn-secondary" id="oneDriveSaveClientId" style="width:100%;margin-top:8px;">Save Client ID</button>';
     } else if (!connected) {
-      html += '<button type="button" class="btn btn-secondary" id="oneDriveConnectBtn" style="width:100%;">Connect Microsoft account</button>';
+      html += '<button type="button" class="btn btn-secondary" id="oneDriveConnectBtn" style="width:100%;">Connect Microsoft account</button>' +
+        '<p class="hint" style="word-break:break-all;">Client ID: ' + oneDrive.clientId.replace(/[<>&"]/g, '') + '</p>' +
+        '<button type="button" class="scan-link" id="oneDriveChangeClientId" style="justify-content:flex-start;padding-left:0;">Change Client ID</button>';
     } else {
       html += '<div id="oneDriveStatus" class="hint">' + oneDriveStatusText() + '</div>' +
         '<div class="panel-actions" style="margin-top:8px;">' +
@@ -2434,6 +2436,14 @@
     }
     var connectBtn = document.getElementById('oneDriveConnectBtn');
     if (connectBtn) connectBtn.addEventListener('click', function () { startOneDriveLogin(); });
+    var changeIdBtn = document.getElementById('oneDriveChangeClientId');
+    if (changeIdBtn) {
+      changeIdBtn.addEventListener('click', function () {
+        oneDrive.clientId = null;
+        saveOneDriveConfig();
+        refreshOneDriveSection();
+      });
+    }
     var syncBtn = document.getElementById('oneDriveSyncNow');
     if (syncBtn) syncBtn.addEventListener('click', function () { syncOneDrive(); });
     var disconnectBtn = document.getElementById('oneDriveDisconnect');
