@@ -543,6 +543,7 @@
   var ACTIVE_PROFILE_KEY = 'ledger.activeProfile.v1';
   var PROFILE_MIGRATION_KEY = 'ledger.profileMigrationV1.v1';
   var activeProfile = 'shared';
+  var profileEpoch = 0;
 
   function profileKey(name) { return 'ledger.' + activeProfile + '.' + name + '.v1'; }
   function STORE_KEY() { return profileKey('entries'); }
@@ -594,7 +595,7 @@
     if (pct >= 60) return 'sunglasses';
     return 'plain';
   }
-  var APP_VERSION = '3.5';
+  var APP_VERSION = '3.6';
   var state = {
     entries: [], allowance: null, categories: [], monthStartDay: 1, view: 'history',
     buckets: { trackingStart: null, funTarget: null, funNote: '', settlements: [] }, badges: [],
@@ -604,6 +605,7 @@
   // persist to ONEDRIVE_KEY; accessToken/accessTokenExpiry/syncing/lastError are runtime-only.
   var oneDrive = {
     clientId: null, refreshToken: null, remoteRef: null, lastSyncedAt: null, lastEtag: null, accountLabel: null,
+    personalRef: null, personalLastSyncedAt: null,
     accessToken: null, accessTokenExpiry: 0, syncing: false, lastError: null
   };
   var storageStatus = { ok: null, lastSaved: null };
@@ -711,6 +713,8 @@
         oneDrive.remoteRef = od.remoteRef || null;
         oneDrive.lastSyncedAt = od.lastSyncedAt || null;
         oneDrive.lastEtag = od.lastEtag || null;
+        oneDrive.personalRef = od.personalRef || null;
+        oneDrive.personalLastSyncedAt = od.personalLastSyncedAt || null;
         oneDrive.accountLabel = od.accountLabel || null;
       }
     } catch (e) {}
@@ -821,6 +825,8 @@
         remoteRef: oneDrive.remoteRef,
         lastSyncedAt: oneDrive.lastSyncedAt,
         lastEtag: oneDrive.lastEtag,
+        personalRef: oneDrive.personalRef,
+        personalLastSyncedAt: oneDrive.personalLastSyncedAt,
         accountLabel: oneDrive.accountLabel
       }));
     } catch (e) {}
@@ -1012,6 +1018,32 @@
     if (createRes.ok) {
       var createdJson = await createRes.json();
       return { driveId: createdJson.parentReference.driveId, folderId: createdJson.id, mode: 'own' };
+    }
+    throw new Error('resolve_failed');
+  }
+
+  // The personal profile syncs to its own folder in the signed-in account's
+  // OneDrive. It is looked up by name in that account's own drive only and is
+  // never offered for sharing, so it cannot be reached through the shared
+  // "Ledger" folder.
+  var PERSONAL_FOLDER = 'Ledger Personal';
+
+  async function resolvePersonalLocation(token) {
+    if (oneDrive.personalRef) return oneDrive.personalRef;
+    var existing = await graphFetch('/me/drive/root:/' + encodeURIComponent(PERSONAL_FOLDER), token);
+    if (existing.ok) {
+      var existingJson = await existing.json();
+      return { driveId: existingJson.parentReference.driveId, folderId: existingJson.id };
+    }
+    if (existing.status !== 404) throw new Error('resolve_failed');
+    var createRes = await graphFetch('/me/drive/root/children', token, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: PERSONAL_FOLDER, folder: {}, '@microsoft.graph.conflictBehavior': 'fail' })
+    });
+    if (createRes.ok) {
+      var createdJson = await createRes.json();
+      return { driveId: createdJson.parentReference.driveId, folderId: createdJson.id };
     }
     throw new Error('resolve_failed');
   }
@@ -1223,7 +1255,8 @@
 
   function oneDriveStatusText() {
     var lines = [oneDrive.accountLabel ? 'Signed in as ' + oneDrive.accountLabel : 'Signed in'];
-    lines.push(oneDrive.syncing ? 'Syncing…' : (oneDrive.lastSyncedAt ? 'Last synced ' + formatTimestamp(oneDrive.lastSyncedAt) : 'Not synced yet'));
+    var lastSynced = activeProfile === 'shared' ? oneDrive.lastSyncedAt : oneDrive.personalLastSyncedAt;
+    lines.push(oneDrive.syncing ? 'Syncing…' : (lastSynced ? 'Last synced ' + formatTimestamp(lastSynced) : 'Not synced yet'));
     if (oneDrive.lastError) lines.push('Last error: ' + oneDrive.lastError);
     return lines.join(' · ');
   }
@@ -1234,25 +1267,37 @@
   }
 
   function scheduleSync() {
-    if (activeProfile !== 'shared' || !oneDrive.clientId || !oneDrive.refreshToken) return;
+    if (!oneDrive.clientId || !oneDrive.refreshToken) return;
     clearTimeout(syncDebounceTimer);
     syncDebounceTimer = setTimeout(function () { syncOneDrive(); }, 1500);
   }
 
+  // Syncs whichever profile is active when it starts: "shared" with the
+  // shared Ledger folder, "personal" with the private Ledger Personal folder.
+  // If the person switches profile while the network calls are in flight, the
+  // download is thrown away before anything is applied, so one profile's data
+  // can never be written into the other; the sync is re-queued instead.
   async function syncOneDrive() {
-    // Only the "shared" profile ever syncs — "personal" must never be
-    // uploaded to or overwritten from the shared OneDrive file.
-    if (activeProfile !== 'shared') return;
     if (!oneDrive.clientId || !oneDrive.refreshToken || oneDrive.syncing) return;
+    var profile = activeProfile;
+    var epoch = profileEpoch;
+    var aborted = false;
     oneDrive.syncing = true;
     renderOneDriveStatus();
     try {
       var token = await getOneDriveAccessToken();
       if (!token) throw new Error('no_token');
-      var ref = oneDrive.remoteRef || await resolveLedgerLocation(token);
-      oneDrive.remoteRef = ref;
+      var ref;
+      if (profile === 'shared') {
+        ref = oneDrive.remoteRef || await resolveLedgerLocation(token);
+        oneDrive.remoteRef = ref;
+      } else {
+        ref = oneDrive.personalRef || await resolvePersonalLocation(token);
+        oneDrive.personalRef = ref;
+      }
       for (var attempt = 0; attempt < 3; attempt++) {
         var remote = await downloadLedgerFile(token, ref);
+        if (epoch !== profileEpoch) { aborted = true; break; }
         var remoteData = remote.data || { entries: [], deletedIds: [] };
         var merged = mergeLedgerData(state.entries, state.deletedIds, remoteData.entries, remoteData.deletedIds);
         state.entries = merged.entries;
@@ -1261,17 +1306,21 @@
         saveDeletedIds();
         applySettingsPayload(mergeSettingsData(buildSettingsPayload(), remoteData.settings));
         var result = await uploadLedgerFile(token, ref, { entries: state.entries, deletedIds: state.deletedIds, settings: buildSettingsPayload() }, remote.etag);
-        if (!result.conflict) { oneDrive.lastEtag = result.etag; break; }
+        if (!result.conflict) { if (profile === 'shared') oneDrive.lastEtag = result.etag; break; }
       }
-      oneDrive.lastSyncedAt = Date.now();
-      oneDrive.lastError = null;
-      saveOneDriveConfig();
-      render();
+      if (!aborted) {
+        if (profile === 'shared') oneDrive.lastSyncedAt = Date.now();
+        else oneDrive.personalLastSyncedAt = Date.now();
+        oneDrive.lastError = null;
+        saveOneDriveConfig();
+        render();
+      }
     } catch (e) {
       oneDrive.lastError = (e && e.message) || 'sync_failed';
     } finally {
       oneDrive.syncing = false;
       renderOneDriveStatus();
+      if (aborted) scheduleSync();
     }
   }
 
@@ -2557,7 +2606,8 @@
   function oneDriveMarkup() {
     var connected = !!oneDrive.refreshToken;
     var hasClientId = !!oneDrive.clientId;
-    var html = '<div class="field"><label>Share with (OneDrive)</label>';
+    var isShared = activeProfile === 'shared';
+    var html = '<div class="field"><label>' + (isShared ? 'Share with (OneDrive)' : 'Sync with (OneDrive)') + '</label>';
     if (!hasClientId) {
       html += '<input type="text" id="oneDriveClientIdInput" placeholder="Microsoft app Client ID" autocomplete="off">' +
         '<p class="hint">One-time setup \u2014 needs a free Microsoft app registration first. Ask if you haven\u2019t set this up yet.</p>' +
@@ -2572,7 +2622,10 @@
         '<button type="button" class="btn btn-secondary" id="oneDriveSyncNow">Sync now</button>' +
         '<button type="button" class="btn btn-secondary" id="oneDriveDisconnect">Disconnect</button>' +
         '</div>';
-      if (oneDrive.remoteRef && oneDrive.remoteRef.mode === 'own') {
+      if (!isShared) {
+        html += '<p class="hint" style="margin-top:8px;">This personal list syncs between your own devices through a private folder (\u201c' + PERSONAL_FOLDER + '\u201d) in your OneDrive. It is never shared with anyone.</p>';
+      }
+      if (isShared && oneDrive.remoteRef && oneDrive.remoteRef.mode === 'own') {
         html += '<div style="margin-top:12px;"><label style="display:block;font-size:12px;color:var(--ink-soft);margin-bottom:6px;">Who has access</label>' +
           '<div id="oneDrivePermissionsList" class="hint">Loading…</div></div>';
         html += '<div style="margin-top:12px;"><label for="oneDriveShareEmail" style="display:block;font-size:12px;color:var(--ink-soft);margin-bottom:6px;">Share this Ledger with</label>' +
@@ -2614,8 +2667,10 @@
         oneDrive.refreshToken = null;
         oneDrive.accessToken = null;
         oneDrive.remoteRef = null;
+        oneDrive.personalRef = null;
         oneDrive.accountLabel = null;
         oneDrive.lastSyncedAt = null;
+        oneDrive.personalLastSyncedAt = null;
         oneDrive.lastEtag = null;
         saveOneDriveConfig();
         refreshOneDriveSection();
@@ -2642,11 +2697,13 @@
   function switchProfile(profile) {
     if (PROFILES.indexOf(profile) === -1 || profile === activeProfile) { closePanel(); return; }
     activeProfile = profile;
+    profileEpoch++;
     try { localStorage.setItem(ACTIVE_PROFILE_KEY, profile); } catch (e) {}
     closePanel();
     loadState();
     state.view = 'history';
     render();
+    scheduleSync();
     if (state.allowance === null || isNaN(state.allowance)) {
       setTimeout(function () { if (state.allowance === null || isNaN(state.allowance)) openSettingsPanel(); }, 300);
     }
@@ -2665,9 +2722,7 @@
       bucketConfigMarkup() +
       badgesMarkup() +
       categoriesManageMarkup() +
-      (activeProfile === 'shared'
-        ? '<div id="oneDriveSection">' + oneDriveMarkup() + '</div>'
-        : '<div class="field"><label>Share with (OneDrive)</label><p class="hint">Only the Gemensam profile can be shared via OneDrive.</p></div>') +
+      '<div id="oneDriveSection">' + oneDriveMarkup() + '</div>' +
       '<div class="panel-actions">' +
       '<button class="btn btn-secondary" id="cancelSettings">Cancel</button>' +
       '<button class="btn btn-primary" id="saveSettings">Save</button>' +
