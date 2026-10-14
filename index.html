@@ -266,6 +266,9 @@
   .scan-upload svg { width: 18px; height: 18px; }
   .scan-upload + .scan-upload { margin-top: 10px; }
   .scan-upload.scan-upload-primary { border-style: solid; border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .setup-video { width: 100%; max-height: 50vh; border-radius: 12px; background: #000; object-fit: cover; display: block; margin-bottom: 8px; }
+  .qr-box { background: #fff; border-radius: 12px; padding: 8px; width: 100%; max-width: 260px; margin: 12px auto; }
+  .qr-box svg { display: block; width: 100%; height: auto; }
   .scan-hint { font-size: 13px; color: var(--ink-soft); line-height: 1.45; margin: 10px 0 0; }
   .scan-hint.scan-hint-err { color: var(--over); }
   .scan-paste-zone {
@@ -595,7 +598,7 @@
     if (pct >= 60) return 'sunglasses';
     return 'plain';
   }
-  var APP_VERSION = '3.6';
+  var APP_VERSION = '3.7';
   var state = {
     entries: [], allowance: null, categories: [], monthStartDay: 1, view: 'history',
     buckets: { trackingStart: null, funTarget: null, funNote: '', settlements: [] }, badges: [],
@@ -1069,22 +1072,26 @@
     return { conflict: false, etag: json.eTag || null };
   }
 
+  async function sendLedgerInvite(email) {
+    var token = await getOneDriveAccessToken();
+    if (!token || !oneDrive.remoteRef) throw new Error('not_ready');
+    var res = await graphFetch('/drives/' + oneDrive.remoteRef.driveId + '/items/' + oneDrive.remoteRef.folderId + '/invite', token, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipients: [{ email: email }],
+        message: 'Delar Ledger med dig så vi ser samma utgifter.',
+        requireSignIn: true, sendInvitation: true, roles: ['write']
+      })
+    });
+    if (!res.ok) throw new Error('invite_failed_' + res.status);
+  }
+
   async function shareLedgerWith(email) {
     var statusEl = document.getElementById('oneDriveShareStatus');
     if (statusEl) statusEl.textContent = 'Sending invite…';
     try {
-      var token = await getOneDriveAccessToken();
-      if (!token || !oneDrive.remoteRef) throw new Error('not_ready');
-      var res = await graphFetch('/drives/' + oneDrive.remoteRef.driveId + '/items/' + oneDrive.remoteRef.folderId + '/invite', token, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          recipients: [{ email: email }],
-          message: 'Delar Ledger med dig så vi ser samma utgifter.',
-          requireSignIn: true, sendInvitation: true, roles: ['write']
-        })
-      });
-      if (!res.ok) throw new Error('invite_failed_' + res.status);
+      await sendLedgerInvite(email);
       if (statusEl) statusEl.textContent = 'Invite sent to ' + email + '.';
       fetchLedgerPermissions();
     } catch (e) {
@@ -2290,6 +2297,7 @@
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
   function closePanel() {
+    stopSetupScanner();
     panel.hidden = true;
     panel.innerHTML = '';
   }
@@ -2608,20 +2616,28 @@
     var hasClientId = !!oneDrive.clientId;
     var isShared = activeProfile === 'shared';
     var html = '<div class="field"><label>' + (isShared ? 'Share with (OneDrive)' : 'Sync with (OneDrive)') + '</label>';
+    if (setupNotice) {
+      html += '<p class="hint" style="color:var(--good);">' + setupNotice.replace(/</g, '&lt;') + '</p>';
+      setupNotice = '';
+    }
     if (!hasClientId) {
-      html += '<input type="text" id="oneDriveClientIdInput" placeholder="Microsoft app Client ID" autocomplete="off">' +
-        '<p class="hint">One-time setup \u2014 needs a free Microsoft app registration first. Ask if you haven\u2019t set this up yet.</p>' +
-        '<button type="button" class="btn btn-secondary" id="oneDriveSaveClientId" style="width:100%;margin-top:8px;">Save Client ID</button>';
+      html += '<input type="text" id="oneDriveClientIdInput" placeholder="Microsoft app Client ID or setup link" autocomplete="off">' +
+        '<p class="hint">One-time setup \u2014 needs a free Microsoft app registration first, or a setup QR/link from someone who has one. You can paste the Client ID or a setup link here.</p>' +
+        '<p class="hint" id="oneDriveClientIdError" style="color:var(--over);" hidden></p>' +
+        '<button type="button" class="btn btn-secondary" id="oneDriveSaveClientId" style="width:100%;margin-top:8px;">Save Client ID</button>' +
+        '<button type="button" class="scan-link" id="oneDriveScanSetup" style="justify-content:flex-start;padding-left:0;">Scan setup QR</button>';
     } else if (!connected) {
       html += '<button type="button" class="btn btn-secondary" id="oneDriveConnectBtn" style="width:100%;">Connect Microsoft account</button>' +
         '<p class="hint" style="word-break:break-all;">Client ID: ' + oneDrive.clientId.replace(/[<>&"]/g, '') + '</p>' +
+        '<button type="button" class="scan-link" id="oneDriveShowQr" style="justify-content:flex-start;padding-left:0;">Show setup QR</button>' +
         '<button type="button" class="scan-link" id="oneDriveChangeClientId" style="justify-content:flex-start;padding-left:0;">Change Client ID</button>';
     } else {
       html += '<div id="oneDriveStatus" class="hint">' + oneDriveStatusText() + '</div>' +
         '<div class="panel-actions" style="margin-top:8px;">' +
         '<button type="button" class="btn btn-secondary" id="oneDriveSyncNow">Sync now</button>' +
         '<button type="button" class="btn btn-secondary" id="oneDriveDisconnect">Disconnect</button>' +
-        '</div>';
+        '</div>' +
+        '<button type="button" class="scan-link" id="oneDriveShowQr" style="justify-content:flex-start;padding-left:0;">Show setup QR</button>';
       if (!isShared) {
         html += '<p class="hint" style="margin-top:8px;">This personal list syncs between your own devices through a private folder (\u201c' + PERSONAL_FOLDER + '\u201d) in your OneDrive. It is never shared with anyone.</p>';
       }
@@ -2638,19 +2654,404 @@
     return html;
   }
 
+  // ---------------------------------------------------------------
+  // Setting up another device: a QR code / link that carries only the
+  // Microsoft app Client ID (no login). The QR generator below is small,
+  // self-contained and offline (byte mode, error correction level M,
+  // versions 1-10).
+  // ---------------------------------------------------------------
+  var qrEncode = (function () {
+    var EXP = [], LOG = [];
+    (function () {
+      var x = 1, i;
+      for (i = 0; i < 255; i++) { EXP[i] = x; LOG[x] = i; x <<= 1; if (x & 256) x ^= 0x11d; }
+      for (i = 255; i < 512; i++) EXP[i] = EXP[i - 255];
+    })();
+    function gmul(a, b) { return (a === 0 || b === 0) ? 0 : EXP[LOG[a] + LOG[b]]; }
+
+    function rsRemainder(data, n) {
+      var gen = [1], i, j;
+      for (i = 0; i < n; i++) {
+        var next = [];
+        for (j = 0; j <= gen.length; j++) next.push(0);
+        for (j = 0; j < gen.length; j++) { next[j] ^= gen[j]; next[j + 1] ^= gmul(gen[j], EXP[i]); }
+        gen = next;
+      }
+      var res = [];
+      for (i = 0; i < n; i++) res.push(0);
+      data.forEach(function (b) {
+        var factor = b ^ res.shift();
+        res.push(0);
+        for (var k = 0; k < n; k++) res[k] ^= gmul(gen[k + 1], factor);
+      });
+      return res;
+    }
+
+    // [group blocks as [count, dataCodewordsPerBlock]], EC codewords per block
+    var SPECS = [null,
+      { ec: 10, blocks: [[1, 16]] }, { ec: 16, blocks: [[1, 28]] }, { ec: 26, blocks: [[1, 44]] },
+      { ec: 18, blocks: [[2, 32]] }, { ec: 24, blocks: [[2, 43]] }, { ec: 16, blocks: [[4, 27]] },
+      { ec: 18, blocks: [[4, 31]] }, { ec: 22, blocks: [[2, 38], [2, 39]] }, { ec: 22, blocks: [[3, 36], [2, 37]] },
+      { ec: 26, blocks: [[4, 43], [1, 44]] }
+    ];
+    var ALIGN = [null, [], [6, 18], [6, 22], [6, 26], [6, 30], [6, 34], [6, 22, 38], [6, 24, 42], [6, 26, 46], [6, 28, 50]];
+
+    function formatBits(ecBits, mask) {
+      var data = (ecBits << 3) | mask, rem = data << 10;
+      for (var i = 4; i >= 0; i--) if ((rem >> (i + 10)) & 1) rem ^= 0x537 << i;
+      return ((data << 10) | rem) ^ 0x5412;
+    }
+    function versionBits(v) {
+      var rem = v << 12;
+      for (var i = 5; i >= 0; i--) if ((rem >> (i + 12)) & 1) rem ^= 0x1F25 << i;
+      return (v << 12) | rem;
+    }
+
+    function maskHit(m, r, c) {
+      switch (m) {
+        case 0: return (r + c) % 2 === 0;
+        case 1: return r % 2 === 0;
+        case 2: return c % 3 === 0;
+        case 3: return (r + c) % 3 === 0;
+        case 4: return (Math.floor(r / 2) + Math.floor(c / 3)) % 2 === 0;
+        case 5: return (r * c) % 2 + (r * c) % 3 === 0;
+        case 6: return ((r * c) % 2 + (r * c) % 3) % 2 === 0;
+        default: return ((r + c) % 2 + (r * c) % 3) % 2 === 0;
+      }
+    }
+
+    function penalty(m) {
+      var size = m.length, score = 0, r, c, dark = 0;
+      function lineScore(line) {
+        var s = 0, run = 1, i;
+        for (i = 1; i <= line.length; i++) {
+          if (i < line.length && line[i] === line[i - 1]) run++;
+          else { if (run >= 5) s += 3 + (run - 5); run = 1; }
+        }
+        var str = line.map(function (b) { return b ? '1' : '0'; }).join('');
+        ['00001011101', '10111010000'].forEach(function (p) {
+          var at = str.indexOf(p);
+          while (at !== -1) { s += 40; at = str.indexOf(p, at + 1); }
+        });
+        return s;
+      }
+      for (r = 0; r < size; r++) {
+        score += lineScore(m[r]);
+        var col = [];
+        for (c = 0; c < size; c++) { col.push(m[c][r]); if (m[r][c]) dark++; }
+        score += lineScore(col);
+      }
+      for (r = 0; r < size - 1; r++) for (c = 0; c < size - 1; c++) {
+        if (m[r][c] === m[r][c + 1] && m[r][c] === m[r + 1][c] && m[r][c] === m[r + 1][c + 1]) score += 3;
+      }
+      var total = size * size;
+      score += (Math.ceil(Math.abs(dark * 20 - total * 10) / total) - 1) * 10;
+      return score;
+    }
+
+    function build(version, codewords) {
+      var size = 17 + 4 * version, mod = [], fn = [], r, c, i;
+      for (r = 0; r < size; r++) {
+        mod.push([]); fn.push([]);
+        for (c = 0; c < size; c++) { mod[r].push(false); fn[r].push(false); }
+      }
+      function setFn(rr, cc, dark) { mod[rr][cc] = dark; fn[rr][cc] = true; }
+      for (i = 0; i < size; i++) { setFn(6, i, i % 2 === 0); setFn(i, 6, i % 2 === 0); }
+      function finder(r0, c0) {
+        for (var dr = -1; dr <= 7; dr++) for (var dc = -1; dc <= 7; dc++) {
+          var rr = r0 + dr, cc = c0 + dc;
+          if (rr < 0 || rr >= size || cc < 0 || cc >= size) continue;
+          var dist = Math.max(Math.abs(dr - 3), Math.abs(dc - 3));
+          setFn(rr, cc, dist !== 2 && dist !== 4);
+        }
+      }
+      finder(0, 0); finder(0, size - 7); finder(size - 7, 0);
+      var pos = ALIGN[version], last = pos.length - 1;
+      pos.forEach(function (pr, ai) {
+        pos.forEach(function (pc, aj) {
+          if ((ai === 0 && aj === 0) || (ai === 0 && aj === last) || (ai === last && aj === 0)) return;
+          for (var dr = -2; dr <= 2; dr++) for (var dc = -2; dc <= 2; dc++) setFn(pr + dr, pc + dc, Math.max(Math.abs(dr), Math.abs(dc)) !== 1);
+        });
+      });
+      function formatCells() {
+        var a = [], b = [];
+        for (i = 0; i < 15; i++) {
+          if (i <= 5) a.push([i, 8]); else if (i === 6) a.push([7, 8]); else if (i === 7) a.push([8, 8]);
+          else if (i === 8) a.push([8, 7]); else a.push([8, 14 - i]);
+          if (i < 8) b.push([8, size - 1 - i]); else b.push([size - 15 + i, 8]);
+        }
+        return [a, b];
+      }
+      var fc = formatCells();
+      fc[0].concat(fc[1]).forEach(function (p) { setFn(p[0], p[1], false); });
+      setFn(size - 8, 8, true);
+      if (version >= 7) {
+        var vb = versionBits(version);
+        for (i = 0; i < 18; i++) {
+          var bit = ((vb >> i) & 1) === 1, a2 = size - 11 + (i % 3), b2 = Math.floor(i / 3);
+          setFn(b2, a2, bit); setFn(a2, b2, bit);
+        }
+      }
+      var bits = [];
+      codewords.forEach(function (cw) { for (var k = 7; k >= 0; k--) bits.push((cw >> k) & 1); });
+      var idx = 0;
+      for (var right = size - 1; right >= 1; right -= 2) {
+        if (right === 6) right = 5;
+        for (var vert = 0; vert < size; vert++) {
+          for (var j = 0; j < 2; j++) {
+            var cc2 = right - j, upward = ((right + 1) & 2) === 0, rr2 = upward ? size - 1 - vert : vert;
+            if (!fn[rr2][cc2] && idx < bits.length) mod[rr2][cc2] = bits[idx++] === 1;
+          }
+        }
+      }
+      var best = null, bestPen = Infinity;
+      for (var mk = 0; mk < 8; mk++) {
+        var copy = mod.map(function (row) { return row.slice(); });
+        for (r = 0; r < size; r++) for (c = 0; c < size; c++) if (!fn[r][c] && maskHit(mk, r, c)) copy[r][c] = !copy[r][c];
+        var fb = formatBits(0, mk);
+        for (i = 0; i < 15; i++) {
+          var bv = ((fb >> i) & 1) === 1;
+          copy[fc[0][i][0]][fc[0][i][1]] = bv;
+          copy[fc[1][i][0]][fc[1][i][1]] = bv;
+        }
+        var pen = penalty(copy);
+        if (pen < bestPen) { best = copy; bestPen = pen; }
+      }
+      return best;
+    }
+
+    function encode(text) {
+      var bytes = Array.prototype.slice.call(new TextEncoder().encode(text));
+      var version, spec, dataCw = 0, ccBits;
+      for (version = 1; version <= 10; version++) {
+        spec = SPECS[version];
+        dataCw = spec.blocks.reduce(function (s, g) { return s + g[0] * g[1]; }, 0);
+        ccBits = version < 10 ? 8 : 16;
+        if (4 + ccBits + bytes.length * 8 <= dataCw * 8) break;
+      }
+      if (version > 10) throw new Error('qr_too_long');
+      var bits = [];
+      function push(val, len) { for (var k = len - 1; k >= 0; k--) bits.push((val >> k) & 1); }
+      push(4, 4); push(bytes.length, ccBits);
+      bytes.forEach(function (b) { push(b, 8); });
+      var cap = dataCw * 8;
+      push(0, Math.min(4, cap - bits.length));
+      while (bits.length % 8) bits.push(0);
+      var padBytes = [0xEC, 0x11], pi = 0;
+      while (bits.length < cap) push(padBytes[pi++ % 2], 8);
+      var data = [], i, j;
+      for (i = 0; i < bits.length; i += 8) { var v = 0; for (j = 0; j < 8; j++) v = (v << 1) | bits[i + j]; data.push(v); }
+      var blocks = [], off = 0;
+      spec.blocks.forEach(function (g) {
+        for (var k = 0; k < g[0]; k++) { blocks.push({ data: data.slice(off, off + g[1]) }); off += g[1]; }
+      });
+      blocks.forEach(function (b) { b.ec = rsRemainder(b.data, spec.ec); });
+      var maxLen = Math.max.apply(null, blocks.map(function (b) { return b.data.length; })), out = [];
+      for (i = 0; i < maxLen; i++) blocks.forEach(function (b) { if (i < b.data.length) out.push(b.data[i]); });
+      for (i = 0; i < spec.ec; i++) blocks.forEach(function (b) { out.push(b.ec[i]); });
+      return build(version, out);
+    }
+    encode._rs = rsRemainder;
+    encode._formatBits = formatBits;
+    encode._versionBits = versionBits;
+    return encode;
+  })();
+
+  function qrSvg(text) {
+    var m = qrEncode(text), n = m.length, quiet = 4, d = '';
+    for (var r = 0; r < n; r++) for (var c = 0; c < n; c++) if (m[r][c]) d += 'M' + (c + quiet) + ',' + (r + quiet) + 'h1v1h-1z';
+    var box = n + 2 * quiet;
+    return '<svg viewBox="0 0 ' + box + ' ' + box + '" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Setup QR code" shape-rendering="crispEdges">' +
+      '<rect width="' + box + '" height="' + box + '" fill="#fff"/><path d="' + d + '" fill="#000"/></svg>';
+  }
+
+  var GUID_RE = /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/;
+  var setupNotice = '';
+  var setupScanner = { stream: null, timer: null };
+
+  // Accepts a bare Client ID, a setup link, or any text that contains one.
+  function clientIdFromText(text) {
+    var m = String(text || '').match(GUID_RE);
+    return m ? m[0].toLowerCase() : null;
+  }
+
+  function setupLink() {
+    return window.location.origin + window.location.pathname + '#setup=' + encodeURIComponent(oneDrive.clientId);
+  }
+
+  function showClientIdError() {
+    var el = document.getElementById('oneDriveClientIdError');
+    if (!el) return;
+    el.textContent = 'That doesn’t look like a Client ID. It looks like xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx. You can also paste a setup link.';
+    el.hidden = false;
+  }
+
+  function applySetupClientId(id, source) {
+    if (oneDrive.refreshToken) {
+      setupNotice = 'This device is already connected to OneDrive. Tap Disconnect first if you want to use a different Client ID.';
+    } else {
+      oneDrive.clientId = id;
+      saveOneDriveConfig();
+      setupNotice = 'Client ID filled in from the setup ' + (source === 'scan' ? 'QR code' : 'link') + '. Tap Connect Microsoft account and sign in with your own Microsoft account.';
+    }
+    openSettingsPanel();
+  }
+
+  function applySetupFromHash() {
+    var m = String(window.location.hash || '').match(/[#&]setup=([^&]*)/);
+    if (!m) return;
+    try { history.replaceState(null, '', window.location.pathname + window.location.search); } catch (e) {}
+    var id = null;
+    try { id = clientIdFromText(decodeURIComponent(m[1])); } catch (e) {}
+    if (!id) return;
+    setTimeout(function () { applySetupClientId(id, 'link'); }, 350);
+  }
+
+  function stopSetupScanner() {
+    if (setupScanner.timer) { clearInterval(setupScanner.timer); setupScanner.timer = null; }
+    if (setupScanner.stream) {
+      setupScanner.stream.getTracks().forEach(function (t) { try { t.stop(); } catch (e) {} });
+      setupScanner.stream = null;
+    }
+    var v = document.getElementById('setupVideo');
+    if (v) { try { v.srcObject = null; } catch (e) {} }
+  }
+
+  var JSQR_URL = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js';
+  var jsQrLoading = null;
+  function loadJsQr() {
+    if (window.jsQR) return Promise.resolve();
+    if (!jsQrLoading) {
+      jsQrLoading = new Promise(function (resolve, reject) {
+        var el = document.createElement('script');
+        el.src = JSQR_URL;
+        el.onload = resolve;
+        el.onerror = function () { jsQrLoading = null; reject(new Error('load_failed')); };
+        document.head.appendChild(el);
+      });
+    }
+    return jsQrLoading;
+  }
+
+  async function openSetupScanPanel() {
+    panel.innerHTML = '<h2>Scan setup QR</h2>' +
+      '<video id="setupVideo" class="setup-video" playsinline muted autoplay></video>' +
+      '<p class="hint" id="setupScanHint">Point the camera at the QR code on the other phone.</p>' +
+      '<div class="panel-actions"><button class="btn btn-secondary" id="setupScanCancel">Cancel</button></div>';
+    showPanel();
+    document.getElementById('setupScanCancel').addEventListener('click', function () { stopSetupScanner(); openSettingsPanel(); });
+    function hint(text, isErr) {
+      var el = document.getElementById('setupScanHint');
+      if (el) { el.textContent = text; el.style.color = isErr ? 'var(--over)' : ''; }
+    }
+    try { await loadJsQr(); } catch (e) {
+      hint('Couldn’t load the QR reader. Check your connection, or paste the setup link into the Client ID field instead.', true);
+      return;
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      hint('This browser can’t use the camera here. Paste the setup link into the Client ID field instead.', true);
+      return;
+    }
+    try {
+      setupScanner.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+    } catch (e) {
+      hint('Camera access was denied. Allow the camera for this page, or paste the setup link into the Client ID field instead.', true);
+      return;
+    }
+    var video = document.getElementById('setupVideo');
+    if (!video) { stopSetupScanner(); return; }
+    video.srcObject = setupScanner.stream;
+    try { await video.play(); } catch (e) {}
+    var canvas = document.createElement('canvas');
+    var ctx = canvas.getContext('2d', { willReadFrequently: true });
+    setupScanner.timer = setInterval(function () {
+      if (!video.videoWidth || !video.videoHeight) return;
+      var scale = Math.min(1, 480 / video.videoWidth);
+      canvas.width = Math.round(video.videoWidth * scale);
+      canvas.height = Math.round(video.videoHeight * scale);
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      var img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      var code = window.jsQR(img.data, img.width, img.height, { inversionAttempts: 'attemptBoth' });
+      if (!code || !code.data) return;
+      var id = clientIdFromText(code.data);
+      if (id) { stopSetupScanner(); applySetupClientId(id, 'scan'); }
+      else hint('That QR code isn’t a Ledger setup code.', true);
+    }, 200);
+  }
+
+  function openSetupQrPanel() {
+    if (!oneDrive.clientId) return;
+    var canInvite = activeProfile === 'shared' && !!oneDrive.refreshToken && !!oneDrive.remoteRef && oneDrive.remoteRef.mode === 'own';
+    var link = setupLink();
+    var svg = '';
+    try { svg = qrSvg(link); } catch (e) {}
+    panel.innerHTML = '<h2>Set up another device</h2>' +
+      '<p class="scan-intro">On the other phone, open Ledger, go to Settings → OneDrive and tap Scan setup QR. The code only contains the Client ID, never a login, so each person signs in with their own Microsoft account. You can also send the link in a chat.</p>' +
+      (canInvite
+        ? '<div class="field"><label for="setupInviteEmail">Invite to the shared Ledger (optional)</label>' +
+          '<input type="email" id="setupInviteEmail" placeholder="their Microsoft account email" autocomplete="off">' +
+          '<button type="button" class="btn btn-secondary" id="setupInviteBtn" style="width:100%;margin-top:8px;">Send OneDrive invite</button>' +
+          '<div id="setupInviteStatus" class="hint" style="margin-top:6px;"></div></div>'
+        : '<p class="hint">To send the shared-folder invite from here, connect your Microsoft account on the Gemensam profile first. You can also invite under Settings as usual.</p>') +
+      '<div class="qr-box">' + svg + '</div>' +
+      '<p class="hint" id="setupLinkText" style="word-break:break-all;">' + link.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</p>' +
+      '<div class="panel-actions"><button class="btn btn-secondary" id="setupQrBack">Back</button>' +
+      '<button class="btn btn-primary" id="setupCopyBtn">Copy setup link</button></div>';
+    showPanel();
+    document.getElementById('setupQrBack').addEventListener('click', openSettingsPanel);
+    document.getElementById('setupCopyBtn').addEventListener('click', function () {
+      var btn = this;
+      function fallback() {
+        var range = document.createRange();
+        range.selectNodeContents(document.getElementById('setupLinkText'));
+        var sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        btn.textContent = 'Select and copy the link';
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(link).then(function () {
+          btn.textContent = 'Copied';
+          setTimeout(function () { btn.textContent = 'Copy setup link'; }, 1500);
+        }, fallback);
+      } else fallback();
+    });
+    var inviteBtn = document.getElementById('setupInviteBtn');
+    if (inviteBtn) {
+      inviteBtn.addEventListener('click', async function () {
+        var email = document.getElementById('setupInviteEmail').value.trim();
+        var statusEl = document.getElementById('setupInviteStatus');
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { statusEl.textContent = 'Enter a valid email address.'; return; }
+        statusEl.textContent = 'Sending invite…';
+        try {
+          await sendLedgerInvite(email);
+          statusEl.textContent = 'Invite sent to ' + email + '. Now show or send the QR code below.';
+        } catch (e) {
+          statusEl.textContent = 'Could not send invite (' + (e && e.message) + ').';
+        }
+      });
+    }
+  }
+
   function bindOneDriveSettings() {
     var saveIdBtn = document.getElementById('oneDriveSaveClientId');
     if (saveIdBtn) {
       saveIdBtn.addEventListener('click', function () {
         var val = document.getElementById('oneDriveClientIdInput').value.trim();
         if (!val) return;
-        oneDrive.clientId = val;
+        var parsedId = clientIdFromText(val);
+        if (!parsedId) { showClientIdError(); return; }
+        oneDrive.clientId = parsedId;
         saveOneDriveConfig();
         refreshOneDriveSection();
       });
     }
     var connectBtn = document.getElementById('oneDriveConnectBtn');
     if (connectBtn) connectBtn.addEventListener('click', function () { startOneDriveLogin(); });
+    var scanSetupBtn = document.getElementById('oneDriveScanSetup');
+    if (scanSetupBtn) scanSetupBtn.addEventListener('click', function () { openSetupScanPanel(); });
+    var showQrBtn = document.getElementById('oneDriveShowQr');
+    if (showQrBtn) showQrBtn.addEventListener('click', function () { openSetupQrPanel(); });
     var changeIdBtn = document.getElementById('oneDriveChangeClientId');
     if (changeIdBtn) {
       changeIdBtn.addEventListener('click', function () {
@@ -2739,6 +3140,12 @@
       var raw = document.getElementById('allowanceInput').value.replace(',', '.');
       var v = parseFloat(raw);
       if (isNaN(v) || v < 0) { document.getElementById('allowanceInput').focus(); return; }
+      var pendingClientId = null;
+      var pendingClientInput = document.getElementById('oneDriveClientIdInput');
+      if (pendingClientInput && pendingClientInput.value.trim()) {
+        pendingClientId = clientIdFromText(pendingClientInput.value);
+        if (!pendingClientId) { showClientIdError(); pendingClientInput.focus(); return; }
+      }
       var prevAllowance = state.allowance, prevStartDay = state.monthStartDay;
       var prevFunTarget = state.buckets.funTarget, prevFunNote = state.buckets.funNote || '';
       state.allowance = Math.round(v * 100) / 100;
@@ -2758,9 +3165,8 @@
       state.buckets.funNote = document.getElementById('funNoteInput').value.trim();
       saveBuckets();
       if (state.buckets.funTarget !== prevFunTarget || state.buckets.funNote !== prevFunNote) touchSetting('fun');
-      var clientIdInput = document.getElementById('oneDriveClientIdInput');
-      if (clientIdInput && clientIdInput.value.trim()) {
-        oneDrive.clientId = clientIdInput.value.trim();
+      if (pendingClientId) {
+        oneDrive.clientId = pendingClientId;
         saveOneDriveConfig();
       }
       closePanel();
@@ -3338,6 +3744,7 @@
   } catch (e) {}
   loadState();
   render();
+  applySetupFromHash();
   if (state.allowance === null || isNaN(state.allowance)) {
     setTimeout(function () { if (state.allowance === null || isNaN(state.allowance)) openSettingsPanel(); }, 300);
   } else {
