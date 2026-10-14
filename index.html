@@ -340,7 +340,26 @@
   .dup-note { font-size: 12px; color: var(--over); padding: 0 0 9px 28px; margin-top: -5px; }
 
   /* ---- Hero ---- */
-  .hero { padding: 4px 20px 20px; border-bottom: 1px solid var(--hairline); }
+  .hero { padding: 4px 20px 20px; border-bottom: 1px solid var(--hairline); position: relative; }
+  .hero > * { position: relative; z-index: 1; }
+  .hero > .hero-pumpkin { position: absolute; z-index: 0; display: none; pointer-events: none; }
+  :root[data-season="halloween"] .hero > .hero-pumpkin { display: block; top: -6px; right: 16px; width: 84px; height: 84px; }
+  :root[data-season="halloween"] .hero-amount,
+  :root[data-season="halloween"] .hero-sub { max-width: calc(100% - 92px); }
+  .hero-pumpkin svg { width: 100%; height: 100%; display: block; overflow: visible; }
+  .pumpkin-glow { animation: pumpkin-flicker 3.4s ease-in-out infinite; }
+  @keyframes pumpkin-flicker { 0%, 100% { opacity: 0.75; } 20% { opacity: 0.55; } 38% { opacity: 0.95; } 55% { opacity: 0.6; } 78% { opacity: 0.88; } }
+  @media (prefers-reduced-motion: reduce) { .pumpkin-glow { animation: none; opacity: 0.75; } }
+  @media (max-width: 380px) {
+    :root[data-season="halloween"] .hero > .hero-pumpkin { width: 68px; height: 68px; right: 12px; }
+    :root[data-season="halloween"] .hero-amount,
+    :root[data-season="halloween"] .hero-sub { max-width: calc(100% - 76px); }
+  }
+  @media (max-width: 339px) {
+    :root[data-season="halloween"] .hero > .hero-pumpkin { display: none; }
+    :root[data-season="halloween"] .hero-amount,
+    :root[data-season="halloween"] .hero-sub { max-width: none; }
+  }
   .hero-amount {
     font-family: 'Source Serif 4', Georgia, serif;
     font-weight: 600;
@@ -527,6 +546,7 @@
 
   <div id="historyView">
     <div class="hero">
+      <div class="hero-pumpkin" id="heroPumpkin" aria-hidden="true"></div>
       <p class="hero-amount mono" id="heroAmount">0,00 kr</p>
       <p class="hero-sub neutral" id="heroSub">Set your daily allowance to get started</p>
       <div class="streak-badge" id="streakBadge" hidden></div>
@@ -603,7 +623,7 @@
     if (pct >= 60) return 'sunglasses';
     return 'plain';
   }
-  var APP_VERSION = '3.9';
+  var APP_VERSION = '3.10';
   var state = {
     entries: [], allowance: null, categories: [], monthStartDay: 1, view: 'history',
     buckets: { trackingStart: null, funTarget: null, funNote: '', settlements: [], transfers: [] }, badges: [],
@@ -1461,6 +1481,28 @@
     return null;
   }
 
+  // Halloween jack-o'-lantern: grins while today is within the allowance,
+  // wide-eyed when it is over.
+  function pumpkinSvg(mood) {
+    var face = '#3B1220';
+    var eyes = mood === 'shocked'
+      ? '<ellipse cx="34" cy="49" rx="7" ry="9" fill="' + face + '"/><ellipse cx="66" cy="49" rx="7" ry="9" fill="' + face + '"/>'
+      : '<path d="M27 53 L41 53 L34 39 Z" fill="' + face + '"/><path d="M59 53 L73 53 L66 39 Z" fill="' + face + '"/>';
+    var mouth = mood === 'shocked'
+      ? '<ellipse cx="50" cy="75" rx="8" ry="10" fill="' + face + '"/>'
+      : '<path d="M25 66 Q50 92 75 66 L69 66 L64 73 L57 66 L50 75 L43 66 L36 73 L31 66 Z" fill="' + face + '"/>';
+    return '<svg viewBox="0 0 100 100" data-mood="' + mood + '" xmlns="http://www.w3.org/2000/svg" focusable="false">' +
+      '<defs><radialGradient id="pkGlow"><stop offset="0" stop-color="#FFB347" stop-opacity="0.65"/><stop offset="1" stop-color="#E8730A" stop-opacity="0"/></radialGradient>' +
+      '<linearGradient id="pkBody" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F5922E"/><stop offset="1" stop-color="#D2600A"/></linearGradient></defs>' +
+      '<circle class="pumpkin-glow" cx="50" cy="58" r="52" fill="url(#pkGlow)"/>' +
+      '<ellipse cx="32" cy="58" rx="25" ry="33" fill="url(#pkBody)" stroke="#B8500A" stroke-width="1.5"/>' +
+      '<ellipse cx="68" cy="58" rx="25" ry="33" fill="url(#pkBody)" stroke="#B8500A" stroke-width="1.5"/>' +
+      '<ellipse cx="50" cy="58" rx="24" ry="35" fill="url(#pkBody)" stroke="#B8500A" stroke-width="1.5"/>' +
+      '<path d="M38 27 C33 45 33 70 39 88 M62 27 C67 45 67 70 61 88" fill="none" stroke="#8A3A05" stroke-opacity="0.35" stroke-width="1.5"/>' +
+      '<path d="M44 25 C43 14 50 8 59 10 C57 14 55 18 55 25 Z" fill="#5C6B2A" stroke="#3F4A1B" stroke-width="1"/>' +
+      eyes + '<path d="M46 60 L54 60 L50 53 Z" fill="' + face + '"/>' + mouth + '</svg>';
+  }
+
   function applySeasonTheme() {
     var season = getSeasonTheme(new Date());
     if (season) document.documentElement.setAttribute('data-season', season);
@@ -2276,6 +2318,15 @@
     document.getElementById('heroAmount').textContent = formatMoney(todaysTotal);
 
     var sub = document.getElementById('heroSub');
+    var pumpkinEl = document.getElementById('heroPumpkin');
+    if (pumpkinEl) {
+      if (document.documentElement.getAttribute('data-season') === 'halloween') {
+        var overToday = state.allowance !== null && !isNaN(state.allowance) && todaysTotal > state.allowance;
+        pumpkinEl.innerHTML = pumpkinSvg(overToday ? 'shocked' : 'happy');
+      } else {
+        pumpkinEl.innerHTML = '';
+      }
+    }
     if (state.allowance === null || isNaN(state.allowance)) {
       sub.textContent = 'Set your daily allowance to get started';
       sub.className = 'hero-sub neutral';
