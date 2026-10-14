@@ -161,11 +161,15 @@
     gap: 12px;
   }
   .date-label { font-size: 13px; color: var(--ink-soft); letter-spacing: 0.02em; margin: 0; }
-  .profile-pill {
-    display: inline-flex; align-items: center; gap: 4px; margin-top: 6px;
-    padding: 3px 9px; border-radius: 20px; background: var(--surface-2); color: var(--ink-soft);
-    font-size: 12px; font-weight: 500; border: none; cursor: pointer; font-family: inherit;
+  .profile-row { padding: 6px 20px 10px; }
+  .profile-switch {
+    display: flex; gap: 2px; padding: 2px; border-radius: 22px; background: var(--surface-2);
   }
+  .profile-switch button {
+    flex: 1; border: none; background: transparent; color: var(--ink-soft); font: inherit; font-size: 13px; font-weight: 500;
+    padding: 8px 10px; min-height: 36px; border-radius: 20px; cursor: pointer; white-space: nowrap;
+  }
+  .profile-switch button[aria-pressed="true"] { background: var(--accent); color: var(--bg); }
   .header-actions { display: flex; gap: 6px; margin: -6px -6px 0 0; }
   .icon-btn {
     background: none;
@@ -484,7 +488,6 @@
   <header>
     <div>
       <p class="date-label" id="todayLabel">—</p>
-      <button type="button" class="profile-pill" id="profilePill"></button>
     </div>
     <div class="header-actions">
       <a class="icon-btn" href="https://karmadonkey.github.io/Familjeappar/" aria-label="Familjeappar" title="Till Familjeappar">
@@ -504,6 +507,13 @@
       </button>
     </div>
   </header>
+
+  <div class="profile-row">
+    <div class="profile-switch" id="profileSwitch" role="group" aria-label="Profile">
+      <button type="button" data-profile="shared"></button>
+      <button type="button" data-profile="personal"></button>
+    </div>
+  </div>
 
   <section class="panel" id="panel" hidden></section>
 
@@ -584,7 +594,7 @@
     if (pct >= 60) return 'sunglasses';
     return 'plain';
   }
-  var APP_VERSION = '3.4';
+  var APP_VERSION = '3.5';
   var state = {
     entries: [], allowance: null, categories: [], monthStartDay: 1, view: 'history',
     buckets: { trackingStart: null, funTarget: null, funNote: '', settlements: [] }, badges: [],
@@ -2061,8 +2071,11 @@
     var analysisView = document.getElementById('analysisView');
     var analysisBtn = document.getElementById('openAnalysis');
 
-    var pill = document.getElementById('profilePill');
-    if (pill) pill.textContent = PROFILE_ICONS[activeProfile] + ' ' + PROFILE_LABELS[activeProfile];
+    document.querySelectorAll('#profileSwitch button').forEach(function (btn) {
+      var p = btn.dataset.profile;
+      btn.textContent = PROFILE_ICONS[p] + ' ' + PROFILE_LABELS[p];
+      btn.setAttribute('aria-pressed', p === activeProfile ? 'true' : 'false');
+    });
 
     applySeasonTheme();
     checkBadges();
@@ -2637,22 +2650,6 @@
     if (state.allowance === null || isNaN(state.allowance)) {
       setTimeout(function () { if (state.allowance === null || isNaN(state.allowance)) openSettingsPanel(); }, 300);
     }
-  }
-
-  function openProfilePanel() {
-    panel.innerHTML = '<h2>Switch profile</h2>' +
-      PROFILES.map(function (p) {
-        var active = p === activeProfile;
-        return '<button type="button" class="btn ' + (active ? 'btn-primary' : 'btn-secondary') +
-          '" style="width:100%;margin-bottom:8px;text-align:left;" data-profile="' + p + '">' +
-          PROFILE_ICONS[p] + ' ' + PROFILE_LABELS[p] + (active ? ' ✓' : '') + '</button>';
-      }).join('') +
-      '<button type="button" class="btn btn-secondary" id="cancelProfile" style="width:100%;">Cancel</button>';
-    showPanel();
-    panel.querySelectorAll('[data-profile]').forEach(function (btn) {
-      btn.addEventListener('click', function () { switchProfile(btn.dataset.profile); });
-    });
-    document.getElementById('cancelProfile').addEventListener('click', closePanel);
   }
 
   function openSettingsPanel() {
@@ -3247,7 +3244,10 @@
 
   document.getElementById('openAdd').addEventListener('click', function () { openAddPanel(); });
   document.getElementById('openSettings').addEventListener('click', openSettingsPanel);
-  document.getElementById('profilePill').addEventListener('click', openProfilePanel);
+  document.getElementById('profileSwitch').addEventListener('click', function (ev) {
+    var btn = ev.target.closest('button[data-profile]');
+    if (btn) switchProfile(btn.dataset.profile);
+  });
   document.getElementById('openAnalysis').addEventListener('click', function () {
     state.view = state.view === 'analysis' ? 'history' : 'analysis';
     closePanel();
