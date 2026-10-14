@@ -266,6 +266,9 @@
   .scan-upload svg { width: 18px; height: 18px; }
   .scan-upload + .scan-upload { margin-top: 10px; }
   .scan-upload.scan-upload-primary { border-style: solid; border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .sync-spinner { width: 28px; height: 28px; border-radius: 50%; border: 3px solid var(--hairline); border-top-color: var(--accent); margin: 14px auto; animation: ledger-spin 0.9s linear infinite; }
+  @keyframes ledger-spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .sync-spinner { animation: none; } }
   .setup-video { width: 100%; max-height: 50vh; border-radius: 12px; background: #000; object-fit: cover; display: block; margin-bottom: 8px; }
   .qr-box { background: #fff; border-radius: 12px; padding: 8px; width: 100%; max-width: 260px; margin: 12px auto; }
   .qr-box svg { display: block; width: 100%; height: auto; }
@@ -598,7 +601,7 @@
     if (pct >= 60) return 'sunglasses';
     return 'plain';
   }
-  var APP_VERSION = '3.7';
+  var APP_VERSION = '3.8';
   var state = {
     entries: [], allowance: null, categories: [], monthStartDay: 1, view: 'history',
     buckets: { trackingStart: null, funTarget: null, funNote: '', settlements: [] }, badges: [],
@@ -608,7 +611,7 @@
   // persist to ONEDRIVE_KEY; accessToken/accessTokenExpiry/syncing/lastError are runtime-only.
   var oneDrive = {
     clientId: null, refreshToken: null, remoteRef: null, lastSyncedAt: null, lastEtag: null, accountLabel: null,
-    personalRef: null, personalLastSyncedAt: null,
+    personalRef: null, personalLastSyncedAt: null, allowCreate: false,
     accessToken: null, accessTokenExpiry: 0, syncing: false, lastError: null
   };
   var storageStatus = { ok: null, lastSaved: null };
@@ -993,16 +996,12 @@
     } catch (e) {}
   }
 
-  // Finds (or creates) the shared "Ledger" folder: first checks your own
-  // OneDrive, then folders others have shared with you, and only creates
-  // a new one if neither exists yet.
+  // Finds the shared "Ledger" folder: first a folder someone shared with this
+  // account, then one in the account's own OneDrive. A new folder is only
+  // created after the person confirmed it, so someone who is joining a shared
+  // Ledger never ends up quietly syncing with an empty folder of their own.
   async function resolveLedgerLocation(token) {
     if (oneDrive.remoteRef) return oneDrive.remoteRef;
-    var own = await graphFetch('/me/drive/root:/Ledger', token);
-    if (own.ok) {
-      var ownJson = await own.json();
-      return { driveId: ownJson.parentReference.driveId, folderId: ownJson.id, mode: 'own' };
-    }
     var sharedRes = await graphFetch('/me/drive/sharedWithMe', token);
     if (sharedRes.ok) {
       var sharedJson = await sharedRes.json();
@@ -1010,9 +1009,20 @@
         return item.remoteItem && item.remoteItem.name === 'Ledger' && item.remoteItem.folder;
       });
       if (match) {
-        return { driveId: match.remoteItem.parentReference.driveId, folderId: match.remoteItem.id, mode: 'shared' };
+        var sh = match.remoteItem.shared || {};
+        var who = (sh.owner && sh.owner.user) || (sh.sharedBy && sh.sharedBy.user) || null;
+        return {
+          driveId: match.remoteItem.parentReference.driveId, folderId: match.remoteItem.id, mode: 'shared',
+          ownerLabel: who ? String(who.displayName || who.email || '').slice(0, 80) : ''
+        };
       }
     }
+    var own = await graphFetch('/me/drive/root:/Ledger', token);
+    if (own.ok) {
+      var ownJson = await own.json();
+      return { driveId: ownJson.parentReference.driveId, folderId: ownJson.id, mode: 'own' };
+    }
+    if (!oneDrive.allowCreate) throw new Error('no_ledger_found');
     var createRes = await graphFetch('/me/drive/root/children', token, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1199,7 +1209,7 @@
     return out;
   }
 
-  function mergeSettingsData(local, remoteRaw) {
+  function mergeSettingsData(local, remoteRaw, preferRemote) {
     var remote = sanitizeSettings(remoteRaw);
     if (!remote) return local;
     var lm = local.meta || {};
@@ -1208,16 +1218,16 @@
       funTarget: local.funTarget, funNote: local.funNote, trackingStart: local.trackingStart, settlements: [],
       meta: { allowance: lm.allowance || 0, monthStartDay: lm.monthStartDay || 0, fun: lm.fun || 0, categories: lm.categories || 0 }
     };
-    if (remote.meta.allowance >= out.meta.allowance && remote.allowance !== null) {
+    if ((preferRemote || remote.meta.allowance >= out.meta.allowance) && remote.allowance !== null) {
       out.allowance = remote.allowance; out.meta.allowance = remote.meta.allowance;
     }
-    if (remote.meta.monthStartDay >= out.meta.monthStartDay && remote.monthStartDay !== null) {
+    if ((preferRemote || remote.meta.monthStartDay >= out.meta.monthStartDay) && remote.monthStartDay !== null) {
       out.monthStartDay = remote.monthStartDay; out.meta.monthStartDay = remote.meta.monthStartDay;
     }
-    if (remote.meta.categories >= out.meta.categories && remote.categories && remote.categories.length) {
+    if ((preferRemote || remote.meta.categories >= out.meta.categories) && remote.categories && remote.categories.length) {
       out.categories = remote.categories; out.meta.categories = remote.meta.categories;
     }
-    if (remote.meta.fun >= out.meta.fun) {
+    if (preferRemote || remote.meta.fun >= out.meta.fun) {
       out.funTarget = remote.funTarget; out.funNote = remote.funNote; out.meta.fun = remote.meta.fun;
     }
     if (remote.trackingStart && (!local.trackingStart || remote.trackingStart < local.trackingStart)) out.trackingStart = remote.trackingStart;
@@ -1260,11 +1270,21 @@
     if (!hadAllowance && state.allowance !== null && !isNaN(state.allowance) && document.getElementById('allowanceInput')) closePanel();
   }
 
+  function friendlyOneDriveError(code) {
+    switch (code) {
+      case 'no_ledger_found': return 'No shared Ledger found yet. If someone is sharing one with you, ask them to send the invite and accept it, then tap Sync now.';
+      case 'state_mismatch': return 'The sign-in could not be completed on this device. Tap Connect to try again.';
+      case 'access_denied': return 'The sign-in was cancelled.';
+      case 'network': return 'Could not reach Microsoft. Check your connection and try again.';
+      default: return 'Last error: ' + code;
+    }
+  }
+
   function oneDriveStatusText() {
     var lines = [oneDrive.accountLabel ? 'Signed in as ' + oneDrive.accountLabel : 'Signed in'];
     var lastSynced = activeProfile === 'shared' ? oneDrive.lastSyncedAt : oneDrive.personalLastSyncedAt;
     lines.push(oneDrive.syncing ? 'Syncing…' : (lastSynced ? 'Last synced ' + formatTimestamp(lastSynced) : 'Not synced yet'));
-    if (oneDrive.lastError) lines.push('Last error: ' + oneDrive.lastError);
+    if (oneDrive.lastError) lines.push(friendlyOneDriveError(oneDrive.lastError));
     return lines.join(' · ');
   }
 
@@ -1289,6 +1309,8 @@
     var profile = activeProfile;
     var epoch = profileEpoch;
     var aborted = false;
+    var isFirstSync = profile === 'shared' ? !oneDrive.lastSyncedAt : !oneDrive.personalLastSyncedAt;
+    var prevError = oneDrive.lastError;
     oneDrive.syncing = true;
     renderOneDriveStatus();
     try {
@@ -1311,7 +1333,7 @@
         state.deletedIds = merged.deletedIds;
         saveEntries();
         saveDeletedIds();
-        applySettingsPayload(mergeSettingsData(buildSettingsPayload(), remoteData.settings));
+        applySettingsPayload(mergeSettingsData(buildSettingsPayload(), remoteData.settings, isFirstSync));
         var result = await uploadLedgerFile(token, ref, { entries: state.entries, deletedIds: state.deletedIds, settings: buildSettingsPayload() }, remote.etag);
         if (!result.conflict) { if (profile === 'shared') oneDrive.lastEtag = result.etag; break; }
       }
@@ -1319,6 +1341,7 @@
         if (profile === 'shared') oneDrive.lastSyncedAt = Date.now();
         else oneDrive.personalLastSyncedAt = Date.now();
         oneDrive.lastError = null;
+        oneDrive.allowCreate = false;
         saveOneDriveConfig();
         render();
       }
@@ -1327,6 +1350,7 @@
     } finally {
       oneDrive.syncing = false;
       renderOneDriveStatus();
+      if ((prevError === 'no_ledger_found') !== (oneDrive.lastError === 'no_ledger_found')) refreshOneDriveSection();
       if (aborted) scheduleSync();
     }
   }
@@ -2633,6 +2657,10 @@
         '<button type="button" class="scan-link" id="oneDriveChangeClientId" style="justify-content:flex-start;padding-left:0;">Change Client ID</button>';
     } else {
       html += '<div id="oneDriveStatus" class="hint">' + oneDriveStatusText() + '</div>' +
+        (oneDrive.lastError === 'no_ledger_found'
+          ? '<p class="hint">If you are the owner and this is your first time, you can create the shared Ledger here.</p>' +
+            '<button type="button" class="btn btn-secondary" id="oneDriveCreateLedger" style="width:100%;margin-top:8px;">Create a new Ledger here</button>'
+          : '') +
         '<div class="panel-actions" style="margin-top:8px;">' +
         '<button type="button" class="btn btn-secondary" id="oneDriveSyncNow">Sync now</button>' +
         '<button type="button" class="btn btn-secondary" id="oneDriveDisconnect">Disconnect</button>' +
@@ -3060,6 +3088,8 @@
         refreshOneDriveSection();
       });
     }
+    var createLedgerBtn = document.getElementById('oneDriveCreateLedger');
+    if (createLedgerBtn) createLedgerBtn.addEventListener('click', function () { oneDrive.allowCreate = true; syncOneDrive(); });
     var syncBtn = document.getElementById('oneDriveSyncNow');
     if (syncBtn) syncBtn.addEventListener('click', function () { syncOneDrive(); });
     var disconnectBtn = document.getElementById('oneDriveDisconnect');
@@ -3736,6 +3766,73 @@
     } catch (e) { /* scanning stays hidden */ }
   }
 
+  // ---------------------------------------------------------------
+  // First sync after signing in: a clear "connecting" screen instead of an
+  // empty list, then what arrived, or what to do if the shared Ledger isn't
+  // visible yet.
+  // ---------------------------------------------------------------
+  var firstSyncActive = false;
+
+  function runStartupPrompts() {
+    if (state.allowance === null || isNaN(state.allowance)) {
+      setTimeout(function () { if (state.allowance === null || isNaN(state.allowance)) openSettingsPanel(); }, 300);
+    } else {
+      var unsettled = findUnsettledPeriod();
+      if (unsettled) setTimeout(function () { openSettlementPanel(unsettled); }, 300);
+    }
+  }
+
+  function showFirstSyncPanel(mode, code) {
+    var shared = activeProfile === 'shared';
+    var what = shared ? 'shared Ledger' : 'personal list';
+    var html = '';
+    if (mode === 'syncing') {
+      html = '<h2>Connecting…</h2><div class="sync-spinner" role="status" aria-label="Syncing"></div>' +
+        '<p class="scan-intro" style="text-align:center;">Getting your ' + what + (shared ? ' and its budget settings' : '') + ' from OneDrive. This takes a few seconds.</p>';
+    } else if (mode === 'done') {
+      var n = state.entries.length;
+      var owner = shared && oneDrive.remoteRef && oneDrive.remoteRef.mode === 'shared' && oneDrive.remoteRef.ownerLabel ? ' from ' + oneDrive.remoteRef.ownerLabel : '';
+      html = '<h2>All set</h2><p class="scan-intro">' +
+        (n > 0
+          ? 'Done. ' + n + (n === 1 ? ' expense' : ' expenses') + (shared ? ' and the shared budget settings' : '') + owner + ' are now on this phone.'
+          : 'Connected. The ' + what + ' is empty so far' + (shared ? ' and the shared budget settings' + owner + ' are on this phone' : '') + '.') +
+        ' From now on it syncs automatically.</p>' +
+        '<div class="panel-actions"><button class="btn btn-primary" id="firstSyncContinue" style="width:100%;">Continue</button></div>';
+    } else if (mode === 'noledger') {
+      html = '<h2>No shared Ledger yet</h2><p class="scan-intro">You are signed in, but no Ledger has been shared with this Microsoft account yet. Ask the owner to send the invite, accept the email you get, then tap Try again.</p>' +
+        '<p class="hint">If you are the owner and this is your first time, you can create the shared Ledger in your own OneDrive instead.</p>' +
+        '<div class="panel-actions"><button class="btn btn-secondary" id="firstSyncCreate">Create a new Ledger here</button>' +
+        '<button class="btn btn-primary" id="firstSyncRetry">Try again</button></div>' +
+        '<button type="button" class="scan-link" id="firstSyncClose" style="justify-content:flex-start;padding-left:0;">Close</button>';
+    } else {
+      html = '<h2>Couldn’t finish</h2><p class="scan-error">' + friendlyOneDriveError(code || 'sync_failed').replace(/</g, '&lt;') + '</p>' +
+        '<div class="panel-actions"><button class="btn btn-secondary" id="firstSyncClose">Close</button>' +
+        '<button class="btn btn-primary" id="firstSyncSettings">Open Settings</button></div>';
+    }
+    panel.innerHTML = html;
+    showPanel();
+    function on(id, fn) { var el = document.getElementById(id); if (el) el.addEventListener('click', fn); }
+    on('firstSyncContinue', function () { closePanel(); runStartupPrompts(); });
+    on('firstSyncClose', function () { closePanel(); runStartupPrompts(); });
+    on('firstSyncSettings', function () { openSettingsPanel(); });
+    on('firstSyncRetry', function () { retryFirstSync(false); });
+    on('firstSyncCreate', function () { retryFirstSync(true); });
+  }
+
+  async function retryFirstSync(allowCreate) {
+    if (allowCreate) oneDrive.allowCreate = true;
+    showFirstSyncPanel('syncing');
+    await syncOneDrive();
+    finishFirstSync();
+  }
+
+  function finishFirstSync() {
+    var err = oneDrive.lastError;
+    if (!err) showFirstSyncPanel('done');
+    else if (err === 'no_ledger_found') showFirstSyncPanel('noledger');
+    else showFirstSyncPanel('error', err);
+  }
+
   // --- init ---
   migrateToProfiles();
   try {
@@ -3745,15 +3842,14 @@
   loadState();
   render();
   applySetupFromHash();
-  if (state.allowance === null || isNaN(state.allowance)) {
-    setTimeout(function () { if (state.allowance === null || isNaN(state.allowance)) openSettingsPanel(); }, 300);
-  } else {
-    var unsettled = findUnsettledPeriod();
-    if (unsettled) setTimeout(function () { openSettlementPanel(unsettled); }, 300);
-  }
+  firstSyncActive = /[?&](code|error)=/.test(window.location.search) && !!oneDrive.clientId &&
+    !(activeProfile === 'shared' ? oneDrive.lastSyncedAt : oneDrive.personalLastSyncedAt);
+  if (firstSyncActive) showFirstSyncPanel('syncing');
+  else runStartupPrompts();
   initScanning();
   handleOneDriveRedirect().then(function (handledRedirect) {
-    if (!handledRedirect) syncOneDrive();
+    if (firstSyncActive) { firstSyncActive = false; finishFirstSync(); }
+    else if (!handledRedirect) syncOneDrive();
   });
   setInterval(function () {
     if (document.visibilityState === 'visible') syncOneDrive();
