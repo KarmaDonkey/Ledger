@@ -438,6 +438,8 @@
   .bucket-card {
     flex: 1; background: var(--surface-2); border-radius: 12px; padding: 12px 14px;
   }
+  .bucket-card { display: flex; flex-direction: column; }
+  .bucket-move { margin-top: auto; padding-top: 8px; }
   .bucket-card-label { font-size: 12px; color: var(--ink-soft); margin-bottom: 4px; }
   .bucket-card-amt { font-family: 'IBM Plex Mono', monospace; font-size: 17px; font-weight: 500; margin-bottom: 6px; }
   .bucket-card-amt.good { color: var(--good); }
@@ -601,10 +603,10 @@
     if (pct >= 60) return 'sunglasses';
     return 'plain';
   }
-  var APP_VERSION = '3.8';
+  var APP_VERSION = '3.9';
   var state = {
     entries: [], allowance: null, categories: [], monthStartDay: 1, view: 'history',
-    buckets: { trackingStart: null, funTarget: null, funNote: '', settlements: [] }, badges: [],
+    buckets: { trackingStart: null, funTarget: null, funNote: '', settlements: [], transfers: [] }, badges: [],
     deletedIds: [], settingsMeta: { allowance: 0, monthStartDay: 0, fun: 0, categories: 0 }
   };
   // Shared with (OneDrive): clientId/refreshToken/remoteRef/lastSyncedAt/lastEtag/accountLabel
@@ -691,8 +693,8 @@
     } catch (e) { state.monthStartDay = 1; }
     try {
       var rawBuckets = localStorage.getItem(BUCKETS_KEY());
-      state.buckets = rawBuckets ? JSON.parse(rawBuckets) : { trackingStart: null, funTarget: null, funNote: '', settlements: [] };
-    } catch (e) { state.buckets = { trackingStart: null, funTarget: null, funNote: '', settlements: [] }; }
+      state.buckets = rawBuckets ? JSON.parse(rawBuckets) : { trackingStart: null, funTarget: null, funNote: '', settlements: [], transfers: [] };
+    } catch (e) { state.buckets = { trackingStart: null, funTarget: null, funNote: '', settlements: [], transfers: [] }; }
     try {
       if (!localStorage.getItem(BUCKET_MODEL_MIGRATION_KEY())) {
         migrateBucketsToPeriodModel();
@@ -702,6 +704,7 @@
     if (state.buckets.funTarget === undefined) state.buckets.funTarget = null;
     if (state.buckets.funNote === undefined) state.buckets.funNote = '';
     if (!state.buckets.settlements) state.buckets.settlements = [];
+    if (!Array.isArray(state.buckets.transfers)) state.buckets.transfers = [];
     try {
       var rawBadges = localStorage.getItem(BADGES_KEY());
       state.badges = rawBadges ? JSON.parse(rawBadges) : [];
@@ -1178,6 +1181,7 @@
       funNote: state.buckets.funNote || '',
       trackingStart: state.buckets.trackingStart || null,
       settlements: state.buckets.settlements.map(function (x) { return Object.assign({}, x); }),
+      transfers: state.buckets.transfers.map(function (x) { return Object.assign({}, x); }),
       meta: Object.assign({}, state.settingsMeta)
     };
   }
@@ -1206,6 +1210,11 @@
           return { periodKey: x.periodKey, bufferAtEnd: x.bufferAtEnd, takenFromFun: x.takenFromFun, toFun: x.toFun, carryToNext: x.carryToNext, settledAt: x.settledAt };
         })
       : [];
+    out.transfers = Array.isArray(r.transfers)
+      ? r.transfers.filter(function (x) {
+          return x && typeof x.id === 'string' && x.id.length <= 40 && typeof x.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(x.date) && num(x.amount) && x.amount !== 0 && num(x.at);
+        }).map(function (x) { return { id: x.id, date: x.date, amount: x.amount, at: x.at }; })
+      : [];
     return out;
   }
 
@@ -1215,7 +1224,7 @@
     var lm = local.meta || {};
     var out = {
       v: 1, allowance: local.allowance, monthStartDay: local.monthStartDay, categories: local.categories,
-      funTarget: local.funTarget, funNote: local.funNote, trackingStart: local.trackingStart, settlements: [],
+      funTarget: local.funTarget, funNote: local.funNote, trackingStart: local.trackingStart, settlements: [], transfers: [],
       meta: { allowance: lm.allowance || 0, monthStartDay: lm.monthStartDay || 0, fun: lm.fun || 0, categories: lm.categories || 0 }
     };
     if ((preferRemote || remote.meta.allowance >= out.meta.allowance) && remote.allowance !== null) {
@@ -1240,6 +1249,9 @@
     });
     out.settlements = Object.keys(byKey).map(function (k) { return byKey[k]; })
       .sort(function (a, b) { return a.settledAt - b.settledAt; });
+    var tById = {};
+    (local.transfers || []).concat(remote.transfers).forEach(function (t) { if (!tById[t.id]) tById[t.id] = t; });
+    out.transfers = Object.keys(tById).map(function (k) { return tById[k]; }).sort(function (a, b) { return a.at - b.at; });
     return out;
   }
 
@@ -1264,6 +1276,7 @@
     state.buckets.funNote = merged.funNote || '';
     state.buckets.trackingStart = merged.trackingStart || state.buckets.trackingStart || null;
     state.buckets.settlements = merged.settlements.slice();
+    state.buckets.transfers = (merged.transfers || state.buckets.transfers).slice();
     if (JSON.stringify(state.buckets) !== before) saveBuckets();
     state.settingsMeta = Object.assign({}, merged.meta);
     saveSettingsMeta();
@@ -1785,17 +1798,28 @@
     return { elapsedDays: Math.round((today - period.start) / 86400000) + 1, days: days };
   }
 
+  // Money moved by hand between the buffer and Fun. amount > 0 moved to Fun
+  // (out of the buffer of the period the date falls in), amount < 0 moved
+  // back from Fun into that period's buffer. Entries are only ever added.
+  function transferNet(period) {
+    var sk = dayKey(period.start), ek = dayKey(period.end);
+    return state.buckets.transfers
+      .filter(function (t) { return t.date >= sk && t.date <= ek; })
+      .reduce(function (sum, t) { return sum + t.amount; }, 0);
+  }
+
   function periodBuffer(period) {
     if (state.allowance === null || isNaN(state.allowance)) return 0;
     var carryIn = carryInForPeriod(period);
     var elapsed = periodElapsedDays(period).elapsedDays;
     var spent = periodTotal(periodBufferItems(period));
-    return carryIn + state.allowance * elapsed - spent;
+    return carryIn + state.allowance * elapsed - spent - transferNet(period);
   }
 
   function funBalance() {
     var total = 0;
     state.buckets.settlements.forEach(function (s) { total += (s.toFun || 0) - (s.takenFromFun || 0); });
+    state.buckets.transfers.forEach(function (t) { total += t.amount; });
     var cashedOut = state.entries.filter(function (e) { return e.bucket === 'fun'; })
       .reduce(function (s, e) { return s + e.amount; }, 0);
     return total - cashedOut;
@@ -1811,7 +1835,7 @@
       var period = getMonthPeriod(anchor, state.monthStartDay);
       var carryIn = carryInForPeriod(period);
       var elapsed = periodElapsedDays(period).elapsedDays;
-      var available = carryIn + (state.allowance || 0) * elapsed;
+      var available = carryIn + (state.allowance || 0) * elapsed - transferNet(period);
       var items = periodBufferItems(period).filter(function (it) { return !isEdit || it.id !== existingEntry.id; });
       var spent = periodTotal(items);
       return (spent + amount) <= available + 0.005;
@@ -1831,6 +1855,7 @@
       '<div class="bucket-card-label">This period</div>' +
       '<div class="bucket-card-amt ' + (over ? 'over' : 'good') + '">' + formatMoney(buffer) + '</div>' +
       '<p class="hint" style="margin-top:4px;">buffer for planned purchases</p>' +
+      '<button type="button" class="scan-link bucket-move" id="moveToFunBtn" style="justify-content:flex-start;padding-left:0;">Move to Fun \u203a</button>' +
       '</div>';
   }
 
@@ -1848,7 +1873,75 @@
         ? '<div class="cat-bar"><div class="cat-bar-fill' + (over ? ' over' : '') + '" style="width:' + (over ? 100 : pct) + '%"></div></div>' +
           '<p class="hint" style="margin-top:4px;">of ' + formatMoney(target) + (note ? ' — ' + note.replace(/</g, '&lt;') : '') + '</p>'
         : '') +
+      '<button type="button" class="scan-link bucket-move" id="moveToBufferBtn" style="justify-content:flex-start;padding-left:0;">Move to buffer \u203a</button>' +
       '</div>';
+  }
+
+  function recordTransfer(amount) {
+    state.buckets.transfers.push({
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+      date: todayKey(),
+      amount: Math.round(amount * 100) / 100,
+      at: Date.now()
+    });
+    saveBuckets();
+    scheduleSync();
+  }
+
+  // direction 'toFun' moves from this period's buffer into Fun; 'toBuffer'
+  // moves from Fun back into this period's buffer.
+  function openMovePanel(direction) {
+    var toFun = direction === 'toFun';
+    var period = currentMonthPeriod();
+    var buffer = periodBuffer(period);
+    var fun = funBalance();
+    var carryIn = carryInForPeriod(period);
+    var max = Math.max(0, toFun ? buffer : fun);
+    var quick = '';
+    if (toFun && carryIn > 0.005 && Math.min(carryIn, max) > 0.005) {
+      quick += '<button type="button" class="btn btn-secondary" id="moveQuickCarry" style="flex:1;">Carried in (' + formatMoney(Math.min(carryIn, max)) + ')</button>';
+    }
+    if (max > 0.005) quick += '<button type="button" class="btn btn-secondary" id="moveQuickAll" style="flex:1;">All (' + formatMoney(max) + ')</button>';
+    var recent = state.buckets.transfers.slice().sort(function (a, b) { return b.at - a.at; }).slice(0, 5);
+    panel.innerHTML = '<h2>' + (toFun ? 'Move to Fun' : 'Move to buffer') + '</h2>' +
+      '<p class="hint">' + (toFun
+        ? 'This period\u2019s buffer is ' + formatMoney(buffer) + (carryIn > 0.005 ? ', including ' + formatMoney(carryIn) + ' carried in from last period' : '') + '. Money you move to Fun leaves the buffer for planned purchases.'
+        : 'Fun has ' + formatMoney(fun) + '. Money you move back goes into this period\u2019s buffer.') + '</p>' +
+      '<div class="field"><label for="moveAmountInput">Amount</label>' +
+      '<input type="text" inputmode="decimal" id="moveAmountInput" class="mono-input" placeholder="0" autocomplete="off"></div>' +
+      (quick ? '<div class="panel-actions" style="margin-top:0;margin-bottom:8px;">' + quick + '</div>' : '') +
+      '<p class="scan-error" id="moveError" hidden></p>' +
+      (recent.length
+        ? '<div class="field"><label>Recent moves</label>' + recent.map(function (t) {
+            return '<div class="hint" style="display:flex;justify-content:space-between;"><span>' + t.date + ' \u00b7 ' + (t.amount > 0 ? 'to Fun' : 'to buffer') +
+              '</span><span class="mono">' + formatMoney(Math.abs(t.amount)) + '</span></div>';
+          }).join('') + '</div>'
+        : '') +
+      '<div class="panel-actions"><button class="btn btn-secondary" id="moveCancel">Cancel</button>' +
+      '<button class="btn btn-primary" id="moveConfirm">' + (toFun ? 'Move to Fun' : 'Move to buffer') + '</button></div>';
+    showPanel();
+    var input = document.getElementById('moveAmountInput');
+    setTimeout(function () { input.focus(); }, 50);
+    function setAmount(v) { input.value = v.toFixed(2).replace('.', ','); }
+    var qc = document.getElementById('moveQuickCarry');
+    if (qc) qc.addEventListener('click', function () { setAmount(Math.min(carryIn, max)); });
+    var qa = document.getElementById('moveQuickAll');
+    if (qa) qa.addEventListener('click', function () { setAmount(max); });
+    document.getElementById('moveCancel').addEventListener('click', closePanel);
+    document.getElementById('moveConfirm').addEventListener('click', function () {
+      var v = parseFloat(input.value.replace(/\s/g, '').replace(',', '.'));
+      var err = document.getElementById('moveError');
+      if (isNaN(v) || v <= 0) { err.textContent = 'Enter an amount above zero.'; err.hidden = false; input.focus(); return; }
+      if (v > max + 0.005) {
+        err.textContent = max > 0.005
+          ? 'You can move at most ' + formatMoney(max) + ' ' + (toFun ? 'from the buffer.' : 'from Fun.')
+          : (toFun ? 'There is nothing in the buffer to move.' : 'There is nothing in Fun to move.');
+        err.hidden = false; input.focus(); return;
+      }
+      recordTransfer(toFun ? v : -v);
+      closePanel();
+      render();
+    });
   }
 
   function recordSettlement(period, data) {
@@ -2061,7 +2154,7 @@
     }
 
     if (type !== 'day' && !analysisState.drillCategory) {
-      var chartStart = (type === 'month') ? carryInForPeriod(period) : 0;
+      var chartStart = (type === 'month') ? carryInForPeriod(period) - transferNet(period) : 0;
       html += budgetTrendChartHtml(period, days, budgetItems, chartStart);
     }
 
@@ -2133,6 +2226,10 @@
       analysisState.drillCategory = null;
       renderAnalysis();
     });
+    var moveToFun = document.getElementById('moveToFunBtn');
+    if (moveToFun) moveToFun.addEventListener('click', function () { openMovePanel('toFun'); });
+    var moveToBuffer = document.getElementById('moveToBufferBtn');
+    if (moveToBuffer) moveToBuffer.addEventListener('click', function () { openMovePanel('toBuffer'); });
     var back = document.getElementById('backToBreakdown');
     if (back) back.addEventListener('click', function () { analysisState.drillCategory = null; renderAnalysis(); });
     document.querySelectorAll('.cat-row').forEach(function (row) {
