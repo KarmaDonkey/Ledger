@@ -269,6 +269,8 @@
   .sync-spinner { width: 28px; height: 28px; border-radius: 50%; border: 3px solid var(--hairline); border-top-color: var(--accent); margin: 14px auto; animation: ledger-spin 0.9s linear infinite; }
   @keyframes ledger-spin { to { transform: rotate(360deg); } }
   @media (prefers-reduced-motion: reduce) { .sync-spinner { animation: none; } }
+  .auto-signin { display: flex; align-items: center; gap: 8px; font-size: 14px; margin-top: 12px; }
+  .auto-signin input { width: 18px; height: 18px; accent-color: var(--accent); }
   .setup-video { width: 100%; max-height: 50vh; border-radius: 12px; background: #000; object-fit: cover; display: block; margin-bottom: 8px; }
   .qr-box { background: #fff; border-radius: 12px; padding: 8px; width: 100%; max-width: 260px; margin: 12px auto; }
   .qr-box svg { display: block; width: 100%; height: auto; }
@@ -340,6 +342,9 @@
   .dup-note { font-size: 12px; color: var(--over); padding: 0 0 9px 28px; margin-top: -5px; }
 
   /* ---- Hero ---- */
+  .signin-banner { margin: 0 20px 10px; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--ink-soft); }
+  .signin-banner[hidden] { display: none; }
+  .signin-banner .btn { flex-shrink: 0; padding: 8px 14px; white-space: nowrap; }
   .hero { padding: 4px 20px 20px; border-bottom: 1px solid var(--hairline); position: relative; }
   .hero > * { position: relative; z-index: 1; }
   .hero > .hero-pumpkin { position: absolute; z-index: 0; display: none; pointer-events: none; }
@@ -542,6 +547,11 @@
     </div>
   </div>
 
+  <div class="signin-banner" id="signInBanner" hidden>
+    <span>OneDrive sync is paused because the Microsoft sign-in expired.</span>
+    <button type="button" class="btn btn-primary" id="signInBannerBtn">Sign in</button>
+  </div>
+
   <section class="panel" id="panel" hidden></section>
 
   <div id="historyView">
@@ -623,7 +633,7 @@
     if (pct >= 60) return 'sunglasses';
     return 'plain';
   }
-  var APP_VERSION = '3.10';
+  var APP_VERSION = '3.11';
   var state = {
     entries: [], allowance: null, categories: [], monthStartDay: 1, view: 'history',
     buckets: { trackingStart: null, funTarget: null, funNote: '', settlements: [], transfers: [] }, badges: [],
@@ -634,6 +644,7 @@
   var oneDrive = {
     clientId: null, refreshToken: null, remoteRef: null, lastSyncedAt: null, lastEtag: null, accountLabel: null,
     personalRef: null, personalLastSyncedAt: null, allowCreate: false,
+    signInExpired: false, autoSignIn: true,
     accessToken: null, accessTokenExpiry: 0, syncing: false, lastError: null
   };
   var storageStatus = { ok: null, lastSaved: null };
@@ -743,6 +754,8 @@
         oneDrive.lastSyncedAt = od.lastSyncedAt || null;
         oneDrive.lastEtag = od.lastEtag || null;
         oneDrive.personalRef = od.personalRef || null;
+        oneDrive.signInExpired = od.signInExpired === true;
+        oneDrive.autoSignIn = od.autoSignIn !== false;
         oneDrive.personalLastSyncedAt = od.personalLastSyncedAt || null;
         oneDrive.accountLabel = od.accountLabel || null;
       }
@@ -855,6 +868,8 @@
         lastSyncedAt: oneDrive.lastSyncedAt,
         lastEtag: oneDrive.lastEtag,
         personalRef: oneDrive.personalRef,
+        signInExpired: oneDrive.signInExpired,
+        autoSignIn: oneDrive.autoSignIn,
         personalLastSyncedAt: oneDrive.personalLastSyncedAt,
         accountLabel: oneDrive.accountLabel
       }));
@@ -899,8 +914,15 @@
     return base64UrlEncode(digest);
   }
 
-  async function startOneDriveLogin() {
+  var SILENT_ATTEMPT_KEY = 'ledger.onedrive.silentAttempt.v1';
+  function lastSilentAttempt() {
+    try { return parseInt(localStorage.getItem(SILENT_ATTEMPT_KEY), 10) || 0; } catch (e) { return 0; }
+  }
+
+  async function startOneDriveLogin(opts) {
     if (!oneDrive.clientId) return;
+    var silent = !!(opts && opts.silent);
+    if (silent) { try { localStorage.setItem(SILENT_ATTEMPT_KEY, String(Date.now())); } catch (e) {} }
     var verifier = randomString(64);
     var challenge = await pkceChallengeFromVerifier(verifier);
     var loginState = randomString(24);
@@ -918,13 +940,15 @@
       code_challenge_method: 'S256',
       state: loginState
     });
+    if (oneDrive.accountLabel && oneDrive.accountLabel.indexOf('@') !== -1) params.set('login_hint', oneDrive.accountLabel);
+    if (silent) params.set('prompt', 'none');
     window.location.assign(ONEDRIVE_AUTHORITY + '/oauth2/v2.0/authorize?' + params.toString());
   }
 
   function applyTokenResponse(json) {
     oneDrive.accessToken = json.access_token;
     oneDrive.accessTokenExpiry = Date.now() + (json.expires_in ? json.expires_in * 1000 : 0) - 60000;
-    if (json.refresh_token) oneDrive.refreshToken = json.refresh_token;
+    if (json.refresh_token) { oneDrive.refreshToken = json.refresh_token; oneDrive.signInExpired = false; }
   }
 
   async function handleOneDriveRedirect() {
@@ -940,7 +964,16 @@
     url.searchParams.delete('error_description');
     var qs = url.searchParams.toString();
     window.history.replaceState({}, document.title, url.pathname + (qs ? '?' + qs : ''));
-    if (authError) { oneDrive.lastError = authError; return true; }
+    if (authError) {
+      var wasSilent = Date.now() - lastSilentAttempt() < 120000;
+      if (wasSilent && /login_required|interaction_required|consent_required|account_selection_required/.test(authError)) {
+        oneDrive.signInExpired = true;
+        saveOneDriveConfig();
+        return true;
+      }
+      oneDrive.lastError = authError;
+      return true;
+    }
     var expectedState = sessionStorage.getItem('ledger.onedrive.state');
     var verifier = sessionStorage.getItem('ledger.onedrive.pkce');
     try {
@@ -991,8 +1024,13 @@
       var json = await res.json();
       if (!res.ok) {
         oneDrive.lastError = json.error || 'refresh_error';
-        oneDrive.refreshToken = null;
-        saveOneDriveConfig();
+        if (json.error === 'invalid_grant' || json.error === 'interaction_required') {
+          oneDrive.refreshToken = null;
+          oneDrive.accessToken = null;
+          oneDrive.signInExpired = true;
+          saveOneDriveConfig();
+          renderSignInBanner();
+        }
         return null;
       }
       applyTokenResponse(json);
@@ -1309,6 +1347,7 @@
       case 'state_mismatch': return 'The sign-in could not be completed on this device. Tap Connect to try again.';
       case 'access_denied': return 'The sign-in was cancelled.';
       case 'network': return 'Could not reach Microsoft. Check your connection and try again.';
+      case 'invalid_grant': return 'Your Microsoft sign-in expired. Sign in again to keep syncing.';
       default: return 'Last error: ' + code;
     }
   }
@@ -2799,6 +2838,7 @@
         '<button type="button" class="btn btn-secondary" id="oneDriveSaveClientId" style="width:100%;margin-top:8px;">Save Client ID</button>' +
         '<button type="button" class="scan-link" id="oneDriveScanSetup" style="justify-content:flex-start;padding-left:0;">Scan setup QR</button>';
     } else if (!connected) {
+      if (oneDrive.signInExpired) html += '<p class="hint" style="color:var(--over);">Your Microsoft sign-in expired. Tap Connect to sign in again.</p>';
       html += '<button type="button" class="btn btn-secondary" id="oneDriveConnectBtn" style="width:100%;">Connect Microsoft account</button>' +
         '<p class="hint" style="word-break:break-all;">Client ID: ' + oneDrive.clientId.replace(/[<>&"]/g, '') + '</p>' +
         '<button type="button" class="scan-link" id="oneDriveShowQr" style="justify-content:flex-start;padding-left:0;">Show setup QR</button>' +
@@ -2825,6 +2865,10 @@
           '<button type="button" class="btn btn-secondary" id="oneDriveShareBtn" style="width:100%;margin-top:8px;">Send invite</button>' +
           '<div id="oneDriveShareStatus" class="hint" style="margin-top:6px;"></div></div>';
       }
+    }
+    if (hasClientId) {
+      html += '<label class="auto-signin"><input type="checkbox" id="oneDriveAutoSignIn"' + (oneDrive.autoSignIn ? ' checked' : '') + '> Sign in automatically at start</label>' +
+        '<p class="hint">Microsoft sign-ins for web apps last about a day. With this on, Ledger quietly renews it when you open the app, so you rarely have to sign in again. Turn it off if you notice a flicker you don\u2019t like.</p>';
     }
     html += '</div>';
     return html;
@@ -3224,6 +3268,8 @@
     }
     var connectBtn = document.getElementById('oneDriveConnectBtn');
     if (connectBtn) connectBtn.addEventListener('click', function () { startOneDriveLogin(); });
+    var autoSignInBox = document.getElementById('oneDriveAutoSignIn');
+    if (autoSignInBox) autoSignInBox.addEventListener('change', function () { oneDrive.autoSignIn = autoSignInBox.checked; saveOneDriveConfig(); });
     var scanSetupBtn = document.getElementById('oneDriveScanSetup');
     if (scanSetupBtn) scanSetupBtn.addEventListener('click', function () { openSetupScanPanel(); });
     var showQrBtn = document.getElementById('oneDriveShowQr');
@@ -3232,6 +3278,7 @@
     if (changeIdBtn) {
       changeIdBtn.addEventListener('click', function () {
         oneDrive.clientId = null;
+        oneDrive.signInExpired = false;
         saveOneDriveConfig();
         refreshOneDriveSection();
       });
@@ -3245,6 +3292,7 @@
       disconnectBtn.addEventListener('click', function () {
         oneDrive.refreshToken = null;
         oneDrive.accessToken = null;
+        oneDrive.signInExpired = false;
         oneDrive.remoteRef = null;
         oneDrive.personalRef = null;
         oneDrive.accountLabel = null;
@@ -3883,6 +3931,7 @@
 
   document.getElementById('openAdd').addEventListener('click', function () { openAddPanel(); });
   document.getElementById('openSettings').addEventListener('click', openSettingsPanel);
+  document.getElementById('signInBannerBtn').addEventListener('click', function () { startOneDriveLogin(); });
   document.getElementById('profileSwitch').addEventListener('click', function (ev) {
     var btn = ev.target.closest('button[data-profile]');
     if (btn) switchProfile(btn.dataset.profile);
@@ -3920,6 +3969,34 @@
   // visible yet.
   // ---------------------------------------------------------------
   var firstSyncActive = false;
+
+  function renderSignInBanner() {
+    var el = document.getElementById('signInBanner');
+    if (!el) return;
+    el.hidden = !(oneDrive.clientId && !oneDrive.refreshToken && oneDrive.signInExpired);
+  }
+
+  // At app start only: if the Microsoft sign-in has expired (web-page apps
+  // get a fixed 24-hour sign-in), quietly ask Microsoft for a new one. It
+  // returns straight away when the phone is still signed in to Microsoft; if
+  // not, the banner offers a one-tap sign-in. At most once per 10 minutes so
+  // it can never loop.
+  function maybeSilentSignIn() {
+    if (!oneDrive.clientId || oneDrive.refreshToken || !oneDrive.signInExpired || !oneDrive.autoSignIn) return false;
+    if (navigator.onLine === false) return false;
+    if (Date.now() - lastSilentAttempt() < 10 * 60 * 1000) return false;
+    startOneDriveLogin({ silent: true });
+    return true;
+  }
+
+  async function startupSync() {
+    if (oneDrive.refreshToken) {
+      var token = await getOneDriveAccessToken();
+      if (token) { syncOneDrive(); return; }
+    }
+    renderSignInBanner();
+    maybeSilentSignIn();
+  }
 
   function runStartupPrompts() {
     if (state.allowance === null || isNaN(state.allowance)) {
@@ -3991,13 +4068,15 @@
   render();
   applySetupFromHash();
   firstSyncActive = /[?&](code|error)=/.test(window.location.search) && !!oneDrive.clientId &&
+    Date.now() - lastSilentAttempt() >= 120000 &&
     !(activeProfile === 'shared' ? oneDrive.lastSyncedAt : oneDrive.personalLastSyncedAt);
   if (firstSyncActive) showFirstSyncPanel('syncing');
   else runStartupPrompts();
   initScanning();
   handleOneDriveRedirect().then(function (handledRedirect) {
     if (firstSyncActive) { firstSyncActive = false; finishFirstSync(); }
-    else if (!handledRedirect) syncOneDrive();
+    else if (!handledRedirect) startupSync();
+    renderSignInBanner();
   });
   setInterval(function () {
     if (document.visibilityState === 'visible') syncOneDrive();
