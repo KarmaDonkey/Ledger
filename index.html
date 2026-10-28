@@ -181,6 +181,13 @@
     display: flex;
   }
   .icon-btn:active { background: var(--hairline); }
+  @media (max-width: 380px) { .header-actions { gap: 2px; } .header-actions .icon-btn { padding: 6px; } }
+  .add-tabs { display: flex; gap: 2px; padding: 2px; border-radius: 22px; background: var(--surface-2); margin: 0 0 14px; }
+  .add-tabs button {
+    flex: 1; border: none; background: transparent; color: var(--ink-soft); font: inherit; font-size: 13px; font-weight: 500;
+    padding: 8px 10px; min-height: 36px; border-radius: 20px; cursor: pointer;
+  }
+  .add-tabs button.active { background: var(--accent); color: var(--bg); }
   .icon-btn svg { width: 20px; height: 20px; display: block; }
   .icon-btn.primary { color: var(--accent); }
 
@@ -525,6 +532,9 @@
       <a class="icon-btn" href="https://karmadonkey.github.io/Familjeappar/" aria-label="Familjeappar" title="Till Familjeappar">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 11.5 12 4l8 7.5M6 10v9a1 1 0 0 0 1 1h3v-5h4v5h3a1 1 0 0 0 1-1v-9"/></svg>
       </a>
+      <button class="icon-btn" id="openPaste" aria-label="Paste expenses" title="Paste expenses">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 4h6v3H9zM8 5.5H6.5A1.5 1.5 0 0 0 5 7v12a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 19 19V7a1.5 1.5 0 0 0-1.5-1.5H16M9 12h6m-6 4h6"/></svg>
+      </button>
       <button class="icon-btn" id="openAnalysis" aria-label="Analysis">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 19V5m5 14V9m5 10V13m5 6V7"/></svg>
       </button>
@@ -633,7 +643,7 @@
     if (pct >= 60) return 'sunglasses';
     return 'plain';
   }
-  var APP_VERSION = '3.11';
+  var APP_VERSION = '3.12';
   var state = {
     entries: [], allowance: null, categories: [], monthStartDay: 1, view: 'history',
     buckets: { trackingStart: null, funTarget: null, funNote: '', settlements: [], transfers: [] }, badges: [],
@@ -2544,6 +2554,11 @@
 
     panel.innerHTML =
       '<h2>' + (isEdit ? 'Edit expense' : 'Log an expense') + '</h2>' +
+      (isEdit ? '' :
+        '<div class="add-tabs" role="group" aria-label="How to add">' +
+        '<button type="button" class="active" id="tabManual" aria-pressed="true">Manual</button>' +
+        '<button type="button" id="tabPaste" aria-pressed="false">Paste</button>' +
+        '<button type="button" id="tabScan" aria-pressed="false">Scan</button></div>') +
       '<div class="field"><label for="amountInput">Amount</label>' +
       '<input type="text" inputmode="decimal" id="amountInput" class="mono-input" placeholder="0,00" autocomplete="off" value="' + initialAmount + '"></div>' +
       '<div class="field"><label>Type</label>' +
@@ -2564,12 +2579,7 @@
       '</div>' +
       (isEdit
         ? '<button class="scan-link" id="deleteEntryBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m2 0-1 13a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1L6 7"/></svg>Delete this entry</button>'
-        : '<button class="scan-link" id="openScan">' +
-          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 8V6a2 2 0 0 1 2-2h2M4 16v2a2 2 0 0 0 2 2h2M20 8V6a2 2 0 0 0-2-2h-2M20 16v2a2 2 0 0 1-2 2h-2"/><circle cx="12" cy="12" r="3.2"/></svg>' +
-          'Scan a bank screenshot instead</button>' +
-          '<button class="scan-link" id="openImport">' +
-          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 12h6m-6 4h6M8 4h5l4 4v12a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z"/></svg>' +
-          'Paste expenses instead</button>');
+        : '');
     showPanel();
     setTimeout(function () { document.getElementById('amountInput').focus(); }, 50);
 
@@ -2668,8 +2678,8 @@
         closePanel();
       });
     } else {
-      document.getElementById('openScan').addEventListener('click', openScanPanel);
-      document.getElementById('openImport').addEventListener('click', openImportPanel);
+      document.getElementById('tabPaste').addEventListener('click', startPasteFlow);
+      document.getElementById('tabScan').addEventListener('click', openScanPanel);
     }
   }
 
@@ -3417,13 +3427,16 @@
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 16V4m0 0-4 4m4-4 4 4M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>' +
       'Choose a screenshot or take a photo</div>' +
       '<p class="scan-hint" id="scanPasteHint">Copied a screenshot? Tap Paste screenshot, or press Ctrl/\u2318+V.</p>' +
-      '<div class="scan-paste-zone" id="scanPasteZone" contenteditable="true" role="textbox" aria-label="Paste a screenshot here" data-placeholder="Press and hold here, then choose Paste" hidden></div>';
+      '<div class="scan-paste-zone" id="scanPasteZone" contenteditable="true" role="textbox" aria-label="Paste a screenshot here" data-placeholder="Press and hold here, then choose Paste" hidden></div>' +
+      '<button type="button" class="scan-link" id="introCancel" style="justify-content:flex-start;padding-left:0;margin-top:10px;">Cancel</button>';
   }
 
   function importIntroMarkup() {
     return '<p class="scan-intro">Paste a table or list of expenses \u2014 like one I\u2019ve given you here in Claude, or copied from a spreadsheet. Each line needs an amount; a date and description help too.</p>' +
+      '<p class="scan-hint" id="importHint" hidden></p>' +
       '<textarea id="importText" class="import-textarea" placeholder="Paste here\u2026"></textarea>' +
-      '<button class="btn btn-primary" id="parseImportBtn" style="width:100%;margin-top:10px;">Parse</button>';
+      '<button class="btn btn-primary" id="parseImportBtn" style="width:100%;margin-top:10px;">Parse</button>' +
+      '<button type="button" class="scan-link" id="introCancel" style="justify-content:flex-start;padding-left:0;margin-top:6px;">Cancel</button>';
   }
 
   function reviewShellHtml(title, bodyHtml) {
@@ -3460,24 +3473,59 @@
     bindReviewActions();
   }
 
-  function openImportPanel() {
+  function openImportPanel(opts) {
     parsedRows = [];
     currentFlow = 'import';
     panel.innerHTML = reviewShellHtml('Paste expenses', importIntroMarkup());
     showPanel();
     bindImportParse();
     bindReviewActions();
-    setTimeout(function () { document.getElementById('importText').focus(); }, 50);
+    if (!(opts && opts.noFocus)) setTimeout(function () { var el = document.getElementById('importText'); if (el) el.focus(); }, 50);
+  }
+
+  function runImportParse(text) {
+    var rows = parseImportText(text);
+    parsedRows = rows.map(function (r) { return { amount: r.amount, description: r.description, date: r.date, category: null, include: true }; });
+    flagDuplicates();
+    renderParsedRows();
   }
 
   function bindImportParse() {
     document.getElementById('parseImportBtn').addEventListener('click', function () {
-      var text = document.getElementById('importText').value;
-      var rows = parseImportText(text);
-      parsedRows = rows.map(function (r) { return { amount: r.amount, description: r.description, date: r.date, category: null, include: true }; });
-      flagDuplicates();
-      renderParsedRows();
+      runImportParse(document.getElementById('importText').value);
     });
+  }
+
+  function showImportHint(text) {
+    var hint = document.getElementById('importHint');
+    if (hint) { hint.textContent = text; hint.hidden = false; }
+    var box = document.getElementById('importText');
+    if (box) box.focus();
+  }
+
+  // One-tap paste: reads what was copied and goes straight to the review
+  // list. If the clipboard can't be read (or holds nothing that looks like
+  // expenses) the paste box opens instead, as before.
+  async function startPasteFlow() {
+    openImportPanel({ noFocus: true });
+    if (!navigator.clipboard || !navigator.clipboard.readText) {
+      showImportHint('Paste what you copied here, then tap Parse.');
+      return;
+    }
+    var text = '';
+    try { text = await navigator.clipboard.readText(); } catch (e) { text = ''; }
+    if (!document.getElementById('importText') || currentFlow !== 'import') return;
+    text = String(text || '').trim();
+    if (!text) {
+      showImportHint('Couldn\u2019t read the clipboard. Paste what you copied here, then tap Parse. If you copied a screenshot, use Scan.');
+      return;
+    }
+    if (parseImportText(text).length === 0) {
+      document.getElementById('importText').value = text;
+      showImportHint('Nothing in what you copied looked like an expense (each line needs an amount). Edit it here or paste again.');
+      return;
+    }
+    runImportParse(text);
   }
 
   function parseAmount(str) {
@@ -3930,6 +3978,8 @@
   });
 
   document.getElementById('openAdd').addEventListener('click', function () { openAddPanel(); });
+  document.getElementById('openPaste').addEventListener('click', startPasteFlow);
+  panel.addEventListener('click', function (ev) { if (ev.target.closest('#introCancel')) closePanel(); });
   document.getElementById('openSettings').addEventListener('click', openSettingsPanel);
   document.getElementById('signInBannerBtn').addEventListener('click', function () { startOneDriveLogin(); });
   document.getElementById('profileSwitch').addEventListener('click', function (ev) {
@@ -3958,8 +4008,6 @@
       var limits = await s.limits().catch(function () { return null; });
       if (!limits || !limits.images) return;
       sampleFn = s;
-      var existingLink = document.getElementById('openScan');
-      if (existingLink) existingLink.style.display = 'flex';
     } catch (e) { /* scanning stays hidden */ }
   }
 
