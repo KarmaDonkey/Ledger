@@ -643,7 +643,7 @@
     if (pct >= 60) return 'sunglasses';
     return 'plain';
   }
-  var APP_VERSION = '3.13';
+  var APP_VERSION = '3.14';
   var state = {
     entries: [], allowance: null, categories: [], monthStartDay: 1, view: 'history',
     buckets: { trackingStart: null, funTarget: null, funNote: '', settlements: [], transfers: [] }, badges: [],
@@ -1459,13 +1459,24 @@
   // a running (allowance - spent) total day by day, up to today, against
   // a dashed zero-line reference (spanning the full period) showing where
   // "exactly on budget" would sit.
-  function budgetTrendChartHtml(period, days, budgetItems, startValue) {
+  function compactMoney(v) {
+    var a = Math.abs(v), sign = v < 0 ? '-' : '';
+    if (a >= 10000) return sign + Math.round(a / 1000) + 'k';
+    if (a >= 1000) return sign + (a / 1000).toFixed(1).replace('.', ',') + 'k';
+    return sign + Math.round(a);
+  }
+
+  // opts.fit (Year view): the horizontal axis covers only the days from the
+  // first one to today, the vertical axis is scaled to the line, and month
+  // marks and min/max values are drawn so small movements can be read.
+  function budgetTrendChartHtml(period, days, budgetItems, startValue, opts) {
     if (state.allowance === null || isNaN(state.allowance)) return '';
+    var fit = !!(opts && opts.fit);
     var byDate = {};
     budgetItems.forEach(function (e) { byDate[e.date] = (byDate[e.date] || 0) + e.amount; });
     var today = new Date();
     today.setHours(0, 0, 0, 0);
-    var series = [];
+    var series = [], dates = [];
     var cum = startValue || 0;
     for (var i = 0; i < days; i++) {
       var d = new Date(period.start);
@@ -1473,16 +1484,19 @@
       if (d.getTime() > today.getTime()) break;
       cum += state.allowance - (byDate[dayKey(d)] || 0);
       series.push(cum);
+      dates.push(d);
     }
     if (series.length === 0) return '';
 
-    var W = 320, H = 120, padX = 8, padY = 14;
-    var innerW = W - padX * 2, innerH = H - padY * 2;
+    var W = 320, H = fit ? 160 : 120;
+    var padL = fit ? 46 : 8, padR = 8, padT = 14, padB = fit ? 30 : 14;
+    var innerW = W - padL - padR, innerH = H - padT - padB;
     var values = series.concat([0]);
     var minVal = Math.min.apply(null, values), maxVal = Math.max.apply(null, values);
     if (minVal === maxVal) { minVal -= 100; maxVal += 100; }
-    function xAt(i) { return padX + (days <= 1 ? 0 : (i / (days - 1)) * innerW); }
-    function yAt(v) { return padY + innerH - ((v - minVal) / (maxVal - minVal)) * innerH; }
+    var span = fit ? series.length : days;
+    function xAt(i) { return padL + (span <= 1 ? 0 : (i / (span - 1)) * innerW); }
+    function yAt(v) { return padT + innerH - ((v - minVal) / (maxVal - minVal)) * innerH; }
 
     var pathD = series.map(function (v, i) { return (i === 0 ? 'M' : 'L') + xAt(i).toFixed(1) + ',' + yAt(v).toFixed(1); }).join(' ');
     var zeroY = yAt(0).toFixed(1);
@@ -1491,12 +1505,39 @@
     var lastX = xAt(series.length - 1).toFixed(1);
     var lastY = yAt(last).toFixed(1);
 
+    var axes = '';
+    if (fit) {
+      function yLabel(v) {
+        return '<text x="' + (padL - 6) + '" y="' + (yAt(v) + 3).toFixed(1) + '" text-anchor="end" font-size="9" fill="var(--ink-soft)">' + compactMoney(v) + '</text>';
+      }
+      axes += yLabel(maxVal);
+      if (yAt(minVal) - yAt(maxVal) > 14) axes += yLabel(minVal);
+      if (minVal < 0 && maxVal > 0 && yAt(minVal) - yAt(0) > 12 && yAt(0) - yAt(maxVal) > 12) axes += yLabel(0);
+      var lastLabelX = -100;
+      dates.forEach(function (dt, i) {
+        var isFirst = i === 0, isMonth = dt.getDate() === 1;
+        if (!isFirst && !isMonth) return;
+        var x = xAt(i);
+        if (x - lastLabelX < 34) return;
+        lastLabelX = x;
+        var label = isFirst && !isMonth
+          ? dt.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+          : dt.toLocaleDateString(undefined, { month: 'short' });
+        axes += '<line x1="' + x.toFixed(1) + '" y1="' + (padT + innerH) + '" x2="' + x.toFixed(1) + '" y2="' + (padT + innerH + 4) + '" stroke="var(--ink-faint)" stroke-width="1"/>' +
+          '<text x="' + x.toFixed(1) + '" y="' + (H - 8) + '" text-anchor="' + (isFirst ? 'start' : 'middle') + '" font-size="9" fill="var(--ink-soft)">' + label + '</text>';
+      });
+    }
+
+    var since = opts && opts.sinceStart
+      ? ' since ' + opts.sinceStart.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+      : ' so far';
     return '<div class="trend-chart">' +
       '<p class="hint" style="margin:0 0 6px;">' +
-      (last >= 0 ? formatMoney(last) + ' under budget so far' : formatMoney(Math.abs(last)) + ' over budget so far') +
+      (last >= 0 ? formatMoney(last) + ' under budget' + since : formatMoney(Math.abs(last)) + ' over budget' + since) +
       '</p>' +
       '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;">' +
-      '<line x1="' + padX + '" y1="' + zeroY + '" x2="' + (W - padX) + '" y2="' + zeroY + '" stroke="var(--ink-faint)" stroke-width="1" stroke-dasharray="3,3"/>' +
+      '<line x1="' + padL + '" y1="' + zeroY + '" x2="' + (W - padR) + '" y2="' + zeroY + '" stroke="var(--ink-faint)" stroke-width="1" stroke-dasharray="3,3"/>' +
+      axes +
       '<path d="' + pathD + '" fill="none" stroke="' + statusColor + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>' +
       '<circle cx="' + lastX + '" cy="' + lastY + '" r="3" fill="' + statusColor + '"/>' +
       '</svg>' +
@@ -2185,6 +2226,19 @@
     if (changed) { state.badges = earned; saveBadges(); }
   }
 
+  // The day tracking began: the earlier of the first budget setup and the
+  // first logged entry. Used so the Year view does not count the days
+  // before the app was in use as under budget.
+  function trackedStartDate() {
+    var keys = [];
+    if (state.buckets.trackingStart) keys.push(state.buckets.trackingStart);
+    state.entries.forEach(function (e) { if (e.date) keys.push(e.date); });
+    if (!keys.length) return null;
+    keys.sort();
+    var d = new Date(keys[0] + 'T00:00:00');
+    return isNaN(d.getTime()) ? null : d;
+  }
+
   function renderAnalysis() {
     var view = document.getElementById('analysisView');
     var type = analysisState.periodType;
@@ -2192,14 +2246,24 @@
     var items = entriesInPeriod(period);
     var budgetItems = items.filter(function (e) { return e.bucket !== 'fun'; });
     var total = periodTotal(budgetItems);
-    var days = Math.round((period.end - period.start) / 86400000) + 1;
+    var calcStart = period.start;
+    var untracked = false;
+    if (type === 'year') {
+      var trackedStart = trackedStartDate();
+      if (trackedStart && trackedStart.getTime() > period.start.getTime()) {
+        if (trackedStart.getTime() > period.end.getTime()) untracked = true;
+        else calcStart = trackedStart;
+      }
+    }
+    var calcPeriod = { start: calcStart, end: period.end };
+    var days = Math.round((period.end - calcStart) / 86400000) + 1;
     var today = new Date();
     today.setHours(0, 0, 0, 0);
     var elapsedDays = days;
-    if (period.start.getTime() > today.getTime()) {
+    if (calcStart.getTime() > today.getTime()) {
       elapsedDays = 1;
     } else if (period.end.getTime() > today.getTime()) {
-      elapsedDays = Math.round((today - period.start) / 86400000) + 1;
+      elapsedDays = Math.round((today - calcStart) / 86400000) + 1;
     }
     var mode = type === 'day' ? 'total' : analysisState.mode;
     var displayValue = mode === 'average' ? total / elapsedDays : total;
@@ -2226,7 +2290,7 @@
 
     html += '<div class="hero" style="padding:8px 0 14px;border-bottom:none;">' +
       '<p class="hero-amount mono">' + formatMoney(displayValue) + '</p>';
-    if (hasAllowance) {
+    if (hasAllowance && !untracked) {
       var budget = mode === 'average' ? state.allowance : state.allowance * days;
       var diff = budget - displayValue;
       html += '<p class="hero-sub ' + (diff >= 0 ? 'good' : 'over') + '">' +
@@ -2234,6 +2298,11 @@
           ? formatMoney(diff) + ' left of ' + formatMoney(budget)
           : formatMoney(Math.abs(diff)) + ' over ' + formatMoney(budget)) +
         (mode === 'average' ? ' per day' : '') + '</p>';
+    }
+    if (type === 'year' && untracked) {
+      html += '<p class="hint" style="margin:6px 0 0;">You started tracking on ' + trackedStartDate().toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) + ', so there is nothing to compare for this year.</p>';
+    } else if (type === 'year' && calcStart.getTime() > period.start.getTime()) {
+      html += '<p class="hint" style="margin:6px 0 0;">Counted from ' + calcStart.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + ', the day you started tracking.</p>';
     }
     html += '</div>';
 
@@ -2244,9 +2313,10 @@
         '</div>';
     }
 
-    if (type !== 'day' && !analysisState.drillCategory) {
+    if (type !== 'day' && !analysisState.drillCategory && !untracked) {
       var chartStart = (type === 'month') ? carryInForPeriod(period) - transferNet(period) : 0;
-      html += budgetTrendChartHtml(period, days, budgetItems, chartStart);
+      html += budgetTrendChartHtml(calcPeriod, days, budgetItems, chartStart,
+        type === 'year' ? { fit: true, sinceStart: calcStart.getTime() > period.start.getTime() ? calcStart : null } : null);
     }
 
     if (analysisState.drillCategory) {
