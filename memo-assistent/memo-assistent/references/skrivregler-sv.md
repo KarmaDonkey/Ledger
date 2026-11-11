@@ -21,7 +21,7 @@ Bygger på klarspråksprinciper (Språkrådet, *Myndigheternas skrivregler*, Kla
 - Datum: **12 mars 2027** eller **2027-03-12**. Veckodagar och månader med liten bokstav.
 
 ## Förkortningar
-- Skriv ut första gången med förkortningen inom parentes: "Risk- och kapitalkommittén (RKK)".
+- Skriv ut första gången med förkortningen inom parentes: "styrelsens risk- och complianceutskott (RCC)".
 - Inga punkter i etablerade förkortningar som Mkr, VD/vd (följ husstil – välj en och var konsekvent).
 - Undvik "bl.a.", "t.ex." i överdrift; skriv ut i formella styrelsetexter.
 

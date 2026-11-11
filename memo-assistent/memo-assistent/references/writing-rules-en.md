@@ -1,6 +1,6 @@
 # Writing rules – English
 
-House style for the fictional Exempelbolaget AB: **British English**, plain-language principles (Plain English Campaign, EU *Clear Writing* guide).
+House style (fictional): **British English**, plain-language principles (Plain English Campaign, EU *Clear Writing* guide).
 
 ## Structure
 - Bottom line up front: recommendation in the first paragraph.
@@ -24,7 +24,7 @@ House style for the fictional Exempelbolaget AB: **British English**, plain-lang
 - -ise (organise, prioritise), -our (colour, behaviour), -re (centre), "programme" (but computer "program"), "licence" (noun) / "license" (verb).
 
 ## Abbreviations
-- Spell out on first use: "Risk and Capital Committee (RKK)". Keep Swedish committee acronyms but explain them.
+- Spell out on first use: "Board Risk and Compliance Committee (RCC)". Always explain committee acronyms on first use in papers going to the Board.
 
 ## Tone
 - Direct, factual, no hype. Hedge only where there is real uncertainty – and quantify it.

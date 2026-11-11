@@ -16,18 +16,19 @@ Varje kommentar: förankrad i ett stycke/citat, en kategori, ett konkret försla
 
 | Kategori | Kontrollera |
 |---|---|
-| `[Längd]` | Jämför med kommitténs norm. Räkna sidor/ord. Föreslå vad som flyttas till bilaga eller stryks. |
-| `[Struktur]` | Står beslutet först? Rubriker som säger något? Logisk ordning? |
-| `[Publik]` | Facktermer/förkortningar för fel publik? Rätt detaljnivå? Styrelsetestet (SvD Näringsliv). |
-| `[Kund]` | Finns kundperspektivet? Är effekten för kunden konkret? |
-| `[Mandat]` | Ligger beslutet inom kommitténs ToR? Har rätt instanser yttrat sig innan? |
-| `[Fakta]` | Ostödda påståenden, siffror utan källa, inkonsekventa siffror. |
+| `[Length]` | Executive summary ≤ 1 sida och fristående? Huvuddokument ≤ 5 sidor (sikta på 3)? Uppskatta sidor (~500 ord/sida). Är appendix motiverade och refererade? Föreslå konkret vad som flyttas eller stryks. |
+| `[Technical]` | För tekniskt för instansen? Metod/modell i huvudtexten i stället för appendix? Förkortningar och fackord som publiken inte delar? |
+| `[Structure]` | Står beslutet först? Rubriker som säger något? Logisk ordning? |
+| `[Audience]` | Facktermer/förkortningar för fel publik? Rätt detaljnivå? Styrelsetestet (SvD Näringsliv). |
+| `[Customer]` | Finns kundperspektivet? Är effekten för kunden konkret? |
+| `[Mandate]` | Ligger beslutet inom kommitténs ToR? Har rätt instanser yttrat sig innan? |
+| `[Facts]` | Ostödda påståenden, siffror utan källa, inkonsekventa siffror. |
 | `[Risk]` | Saknade risker, alternativ, konsekvens om inget görs. |
-| `[Språk]` | Enligt `skrivregler-sv.md` / `writing-rules-en.md`. Samla småfel i en kommentar i stället för många. |
+| `[Language]` | Enligt `skrivregler-sv.md` / `writing-rules-en.md`. Samla småfel i en kommentar i stället för många. |
 
 ## Ton
 - Rak men respektfull: *"Det här stycket kan nog strykas – beslutet påverkas inte av det."*
-- Ifrågasätt gärna: *"Memot är 5 sidor, PK:s norm är 3. Behöver styrelsen verkligen avsnitt 4?"*
+- Ifrågasätt gärna: *"Huvuddokumentet är 7 sidor – gränsen är 5. Avsnitt 4 om modellvalet kan bli appendix; behöver GEC det alls?"*
 - Max ~15 detaljkommentarer; prioritera. Erbjud fler vid önskemål.
 
 ## Steg 4 – Erbjud nästa steg

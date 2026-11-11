@@ -17,8 +17,10 @@
 - Fråga alltid: *Skulle en kund förstå varför vi gör detta?*
 
 ## 4. Längd
-- Normen: **1–2 sidor** + bilagor. Styrelsen: helst 1 sida sammanfattning.
-- Allt som inte behövs för beslutet → bilaga eller bort.
+- Formatet: **executive summary max 1 sida** + **huvuddokument max 5 sidor** + appendix. Gränserna är tak, inte mål – sikta på 3 sidor.
+- Executive summary ska kunna läsas helt fristående; många ledamöter läser bara den.
+- Allt som inte behövs för beslutet → appendix eller bort. Appendix är inte en dumpningsplats: varje appendix ska svara på en trolig fråga och refereras från huvudtexten.
+- Tekniska detaljer (metod, modeller, datakällor) hör hemma i appendix – särskilt för GEC, RCC och Board.
 - En idé per stycke. Max ~5 meningar per stycke.
 - Om memot är längre än kommitténs norm: säg det och föreslå konkret vad som kan flyttas eller strykas.
 

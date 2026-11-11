@@ -1,67 +1,52 @@
-# Kommittéregister
+# Committee register
 
-> **FIKTIVA DATA** för proof of concept. Organisationen "Exempelbolaget AB" och alla personer är påhittade. Ersätt med riktigt register vid skarp användning.
+> **FICTIONAL DATA** for the proof of concept. Mandates and thresholds are invented. Replace with the real register for live use. Meeting dates and pre-read deadlines live in the **committee calendar (Excel)** – see `forankring.md`.
 
-Generell regel om inget annat anges: underlag ska vara sekreteraren tillhanda **7 arbetsdagar** före mötet. Möten hålls inte i juli.
+## Common format (all committees)
+- **One template** for all committees (see `mallar.md`): **Executive summary** (max 1 page) + **main paper max 5 pages** + appendices.
+- **Language**: English by default. Swedish only if the user says so.
+- **Pre-read**: submitted to the committee secretary by the deadline in the calendar. Fallback if the calendar has no deadline: 7 business days before (Board/RCC: 10 business days).
+- **Booking**: an item must be booked on the agenda with the secretary; status is tracked in the calendar (column `Booked`).
 
----
-
-## CHEF – Närmaste chef (första instans)
-- **Vad**: Avstämning innan memot går vidare. Godkänner att ärendet anmäls till kommitté.
-- **Ledtid**: Boka 30–45 min minst **5 arbetsdagar** innan kommitténs deadline, så att det finns tid för ändringar.
-- **Format**: Fritt, gärna utkast i kommitténs mall.
-
----
-
-## PK – Produktkommittén
-- **Mandat (ToR i sammandrag)**: Beslutar om nya och väsentligt ändrade produkter och tjänster upp till 10 Mkr i investering. Bereder större ärenden till LG. Ansvarar för att kundperspektiv, regelefterlevnad och lönsamhet bedöms.
-- **Ordförande**: Karin Lindqvist (Produktchef)
-- **Ledamöter**: Ahmed Yusuf (Compliance), Sofia Berg (Kundupplevelse), Johan Ek (Controller), Lina Holm (IT-arkitektur)
-- **Möten**: Första onsdagen varje månad, 90 min
-- **Deadline underlag**: 7 arbetsdagar före
-- **Mall/längd**: Produktmemo, max **3 sidor** + bilagor
-- **Språk**: Svenska
-- **Brukar fråga om**: Kundbehov och kundtester, kannibalisering, compliance-bedömning, IT-beroenden.
-
-## RKK – Risk- och kapitalkommittén
-- **Mandat**: Bereder och beslutar i frågor om riskaptit, riskmodeller, kapitalplanering och väsentliga risker. Yttrar sig över ärenden med väsentlig riskpåverkan innan LG/styrelse.
-- **Ordförande**: Erik Sandberg (CRO)
-- **Ledamöter**: Maria Nyström (CFO), Peter Åkesson (Chef Treasury), Anna Gustavsson (Chefsaktuarie), Oskar Lund (Chef Compliance)
-- **Möten**: Andra tisdagen varje månad, 2 h
-- **Deadline underlag**: 10 arbetsdagar före
-- **Mall/längd**: Riskmemo, max **4 sidor**, tekniska bilagor tillåtna
-- **Språk**: Engelska (koncernspråk)
-- **Publikprofil**: Expert
-- **Brukar fråga om**: Modellantaganden, stresstester, påverkan på kapitalkvot, limiter, tillsynsdialog.
-
-## LG – Ledningsgruppen
-- **Mandat**: VD:s beslutsforum. Beslutar om investeringar 10–50 Mkr, organisationsförändringar och strategiska initiativ. Bereder ärenden till styrelsen.
-- **Ordförande**: VD Helena Strand
-- **Ledamöter**: CFO, CRO, Produktchef, HR-chef Mats Wiklund, CIO Sara Lindgren, Kommunikationschef Jonas Falk
-- **Möten**: Varje måndag; beslutsärenden endast **sista måndagen i månaden**
-- **Deadline underlag**: 5 arbetsdagar före
-- **Mall/längd**: LG-memo, max **2 sidor**
-- **Språk**: Svenska
-- **Publikprofil**: Ledning
-- **Brukar fråga om**: Kostnad, nytta, resursbehov, prioritering mot andra initiativ, kommunikation.
-
-## STY – Styrelsen
-- **Mandat**: Beslutar om strategi, riskaptit, investeringar över 50 Mkr, väsentliga avtal och policyer.
-- **Ordförande**: Gunnar Ehrenberg
-- **Möten 2027**: 10 feb, 21 apr, 16 jun, 22 sep, 27 okt (strategi), 8 dec
-- **Deadline underlag**: **15 arbetsdagar** före; ärendet ska ha passerat LG innan
-- **Mall/längd**: Styrelse-PM, max **2 sidor** inkl. sammanfattning; bilagor sparsamt
-- **Språk**: Svenska (engelsk sammanfattning om ärendet rör koncernen)
-- **Publikprofil**: Styrelse
-- **Brukar fråga om**: Strategisk passform, riskaptit, rykte, tillsyn, kundeffekter, uppföljning av tidigare beslut.
+## Typical path
+```
+Treasury Committee (TC) → GAC (CFO) → GEC (CEO) → RCC (Board) → Board
+```
+Not every item goes all the way – it depends on the mandate (below). Ask the user to confirm the path.
 
 ---
 
-## Typiska vägar
-| Ärendetyp | Väg |
-|---|---|
-| Ny produkt < 10 Mkr | CHEF → PK |
-| Ny produkt 10–50 Mkr | CHEF → PK → LG |
-| Väsentlig riskpåverkan | CHEF → (PK) → RKK → LG → STY |
-| Investering > 50 Mkr | CHEF → PK/RKK → LG → STY |
-| Policyändring | CHEF → RKK → LG → STY |
+## TC – Treasury Committee
+- **Chair**: Group Treasurer
+- **Members (roles)**: Head of ALM, Head of Funding, Head of Market Risk (2nd line), Group Financial Controller
+- **Mandate (summary)**: Liquidity and funding, interest rate risk in the banking book, FX hedging, investment portfolio. Decides within limits set by GAC; prepares limit changes and funding strategy for GAC.
+- **Audience profile**: Expert – technical depth is fine, but the main paper must still lead with the decision.
+- **Usually asks about**: assumptions, scenarios, limit utilisation, market conditions, hedge effectiveness.
+
+## GAC – CFO committee
+- **Chair**: CFO
+- **Members (roles)**: Group Treasurer, CRO, Head of Group Finance, Head of Capital Management, Head of Tax
+- **Mandate (summary)**: Capital and liquidity planning, ALM framework, accounting policies, financial targets, limits within Board-approved risk appetite. Prepares items for GEC and RCC.
+- **Audience profile**: Expert/Management
+- **Usually asks about**: capital and P&L impact, consistency with financial plan, risk appetite, rating impact, accounting treatment.
+
+## GEC – Group Executive Committee
+- **Chair**: CEO
+- **Members (roles)**: CFO, CRO, COO, CIO, Chief Compliance Officer, Head of HR, business area heads
+- **Mandate (summary)**: CEO's decision forum. Strategy execution, investments above GAC's mandate, organisational changes, items that go to the Board.
+- **Audience profile**: Management
+- **Usually asks about**: business and customer impact, cost and benefit, priority against other initiatives, execution risk, reputation, who owns it.
+
+## RCC – Board Risk and Compliance Committee
+- **Chair**: Non-executive Board member
+- **Members (roles)**: 3–4 Board members; CRO and Chief Compliance Officer attend; Head of Internal Audit attends
+- **Mandate (summary)**: Prepares risk and compliance matters for the Board: risk appetite, risk policies, capital and liquidity adequacy (ICAAP/ILAAP), material risk exposures.
+- **Audience profile**: Board – risk-literate but not specialists. No unexplained jargon.
+- **Usually asks about**: risk appetite fit, downside scenarios, regulatory view, control environment, lessons from past incidents.
+
+## Board
+- **Chair**: Chair of the Board
+- **Mandate (summary)**: Strategy, risk appetite, policies, major investments and transactions, approval of ICAAP/ILAAP.
+- **Audience profile**: Board – "SvD Näringsliv / FT Lex reader": an intelligent generalist.
+- **Usually asks about**: strategic fit, why now, what could go wrong, customers and reputation, regulator, how this will be followed up.
+- **Note**: Items normally have passed GEC and, for risk matters, RCC. The paper should state which bodies have reviewed it and their view.

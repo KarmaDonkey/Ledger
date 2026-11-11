@@ -1,49 +1,50 @@
 # Memoassistent – proof of concept
 
-En Claude-native memoassistent som hjälper till att **planera, skriva, granska, förankra och förbereda** memon till chef, kommittéer och styrelse. Byggd som en **Claude Skill** som arbetar i **Claude Docs**.
+En Claude-native **memocoach** som hjälper till att **planera, skriva, granska, förankra och förbereda** committee papers genom vägen TC → GAC → GEC → RCC → Board. Byggd som en **Claude Skill** som arbetar i **Claude Docs**.
 
-> All data här (Exempelbolaget AB, kommittéer, personer, testutkast) är **påhittad**.
+> All data här (kommittémandat, kalender, testutkast) är **påhittad**.
 
 ## Innehåll
 ```
 memo-assistent/
 ├── memo-assistent/            ← själva skillen
-│   ├── SKILL.md               ← instruktioner: fem lägen + Claude Docs-arbetssätt
+│   ├── SKILL.md               ← coach-hållning, fem lägen, Claude Docs-arbetssätt
 │   └── references/
+│       ├── coachning.md        grindar G0–G6, kontrollfrågor, coachande motstånd
+│       ├── kommitteer.md       TC, GAC, GEC, RCC, Board: mandat, roller, gemensamt format
+│       ├── publikprofiler.md   Expert / Ledning / Styrelse ("SvD Näringsliv-läsaren")
 │       ├── skrivprinciper.md   mottagare, slutsats först, kundperspektiv, längd
-│       ├── publikprofiler.md   Expert / Ledning / Styrelse ("SvD Näringsliv-läsaren") / Chef
-│       ├── kommitteer.md       fiktivt register: ToR, ledamöter, mötesrytm, deadlines, längdkrav
-│       ├── skrivregler-sv.md   klarspråk, siffror, förkortningar
 │       ├── writing-rules-en.md brittisk engelska, plain English, svengelska-fällor
-│       ├── mallar.md           memobrief, beslutsmemo sv/en, informationsmemo, styrelse-PM
+│       ├── skrivregler-sv.md   klarspråk, siffror, förkortningar
+│       ├── mallar.md           memobrief + gemensam mall (exec summary + max 5 sidor + appendix)
 │       ├── granskning.md       granskningsmetod och kommentarskategorier
-│       ├── forankring.md       baklängesplanering, bokningar, logg
-│       └── qa-traning.md       Q&A per ledamot, träningsläge med feedback
+│       ├── forankring.md       kommittékalender (Excel), baklängesplanering, bokningar, logg
+│       └── qa-traning.md       Q&A per generisk roll, träningsläge med feedback
 ├── exempel/
-│   └── utkast-digital-skadeanmalan.md   testutkast med avsiktliga brister
+│   ├── draft-irrbb-limit-framework.md   testutkast (engelska) med avsiktliga brister
+│   └── committee-calendar.xlsx          fiktiv kommittékalender dec 2026 – dec 2027
 └── memo-assistent.skill       ← zip att ladda upp i Claude
 ```
 
 ## Installera
 1. Ladda ner `memo-assistent.skill` (en zip-fil).
-2. claude.ai → **Settings → Capabilities → Skills** → **Upload skill** → välj filen.
-3. Se till att **Claude Docs** är påslaget (och gärna en kalender-connector).
+2. claude.ai → inställningarna för **Skills** (Settings → Capabilities/Customize) → **Upload skill**.
+3. Slå på **Claude Docs** (och gärna kalender/mejl-connector).
 
-Alternativ: skapa ett **Claude Project** och lägg `SKILL.md` som projektinstruktion och filerna i `references/` som projektkunskap.
+Alternativ: ett **Claude Project** med `SKILL.md` som instruktion och `references/` + kalendern som projektkunskap. Då slipper man ladda upp kalendern varje gång.
 
 ## Prova
-| Läge | Exempelprompt |
+| Läge | Exempel |
 |---|---|
-| Planera | "Jag behöver skriva ett memo om att byta skadesystem. Det ska till LG och sen styrelsen." |
-| Skriva | "Skriv ett utkast utifrån briefen och den bifogade PDF:en." |
-| Granska | Bifoga `exempel/utkast-digital-skadeanmalan.md`: "Granska det här, det ska till styrelsen." |
-| Förankra | "Målet är styrelsemötet 21 april. Vilken väg och när måste allt vara klart?" |
-| Förbereda | "Ta fram Q&A inför LG" → "Kör träningsläge, tuff nivå." |
+| Planera (coach) | "Jag ska skriva ett papper om nya IRRBB-limiter, det ska hela vägen till styrelsen." |
+| Granska | Bifoga `draft-irrbb-limit-framework.md`: "Granska – det ska till GAC och sedan GEC." |
+| Förankra | Bifoga `committee-calendar.xlsx`: "Målet är styrelsen 21 april. Går det ihop?" |
+| Förbereda | "Ta fram Q&A inför RCC" → "Kör träningsläge, tuff nivå, som styrelsemöte." |
 
 ## Byta till riktiga data
-Ersätt `references/kommitteer.md` med ert riktiga register (samma rubriker), och lägg ev. företagets språkpolicy i `skrivregler-*.md`. Kör `zip -r memo-assistent.skill memo-assistent` i den här mappen för att bygga om paketet.
+Ersätt `references/kommitteer.md` och kalendern med era (samma rubriker/kolumner). Bygg om paketet med `zip -r memo-assistent.skill memo-assistent` i den här mappen.
 
 ## Nästa steg (idéer)
-- Bildspel ur färdigt memo (Slides-artifact eller .pptx).
-- Statusöversikt över alla pågående memon och var de ligger i flödet.
+- Bilder ur färdigt papper (Slides-artifact eller .pptx).
+- Statusöversikt över alla pågående papper, kopplad till kalendern.
 - Minne per kommitté: vilka frågor som brukar komma, uppdateras från loggen.

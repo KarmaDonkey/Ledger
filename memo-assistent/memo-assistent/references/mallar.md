@@ -1,80 +1,77 @@
-# Mallar
+# Templates
 
-## Memobrief (resultat av intervjun)
+All committees (TC, GAC, GEC, RCC, Board) use the **same template**. English by default; a Swedish version is at the end.
+
+## Memo brief (output of the interview)
 ```
-MEMOBRIEF
-Ärende:            <kort titel>
-Kärnbudskap:       <en mening: vad ska beslutas/förstås>
-Typ:               Beslut | Information | Diskussion
-Väg:               CHEF (datum) → <kommitté> (datum) → … → <målmöte> (datum)
-Publik/profil:     <per instans: Expert/Ledning/Styrelse>
-Språk:             <sv/en per instans>
-Längdkrav:         <per instans>
-Mottagarnas oro:   <punkter>
-Kundperspektiv:    <hur påverkas kunden>
-Om inget görs:     <konsekvens>
-Underlag:          <bilagor, källor>
-Öppna frågor:      <det som saknas>
-```
-
-## Beslutsmemo (svenska)
-```
-# <Rubrik som säger vad som föreslås>
-Till: <kommitté>   Från: <namn, funktion>   Datum: <datum>   Ärendetyp: Beslut
-
-## Förslag till beslut
-<Kommittén> föreslås besluta att …
-
-## Sammanfattning
-<3–5 meningar: vad, varför, vad det ger, vad det kostar, största risken>
-
-## Bakgrund
-<Varför ärendet kommer upp nu. Max ett stycke.>
-
-## Kund- och affärseffekt
-<Hur påverkas kunderna? Vad ger det affären? Siffror.>
-
-## Alternativ som övervägts
-<1–3 alternativ, inkl. "göra ingenting", och varför de valts bort>
-
-## Risker och hantering
-<De viktigaste riskerna, sannolikhet/konsekvens, åtgärd>
-
-## Kostnad, resurser och tidplan
-
-## Förankring
-<Vilka som tillfrågats/yttrat sig, t.ex. Compliance, RKK>
-
-## Bilagor
+MEMO BRIEF
+Item:              <short title>
+Core message:      <one sentence: what should be decided/understood>
+Type:              Decision | Information | Discussion/Guidance
+Path:              <e.g. TC (date) → GAC (date) → GEC (date) → RCC (date) → Board (date)>
+Audience per step: <Expert / Management / Board>
+Booked:            <per step: yes/no, from the committee calendar>
+Language:          English | Swedish
+Key concerns:      <who needs convincing, about what>
+Customer impact:   <how customers are affected>
+If nothing done:   <consequence>
+Evidence:          <attachments, sources, key numbers>
+Consulted:         <who has seen it, who may object>
+Assumptions:       <things assumed but not confirmed>
+Open questions:    <numbered, with owner>
 ```
 
-## Informationsmemo (svenska)
+## Committee paper (English) – standard
 ```
-# <Rubrik med budskapet>
-Till / Från / Datum / Ärendetyp: Information
-## Huvudbudskap  (3 meningar)
-## Vad har hänt / läget
-## Vad det betyder för oss och kunderna
-## Nästa steg
+# <Heading that states the proposal>
+To: <committee>   From: <name, function>   Date: <date>
+Item type: Decision | Information | Discussion   Previously reviewed by: <bodies + outcome>
+
+## Executive summary  (max 1 page – must stand alone)
+**Proposed resolution:** The Committee is asked to resolve that …
+- Why: <2–3 bullets>
+- Impact: <customers, capital/P&L, risk – with numbers>
+- Main risk and mitigation: <1 bullet>
+- If not approved: <1 bullet>
+
+## 1. Background and why now          (≤ ½ page)
+## 2. Proposal                        
+## 3. Impact – customers, financials, capital/liquidity, risk
+## 4. Options considered              (incl. do nothing)
+## 5. Risks and mitigation
+## 6. Implementation, ownership and follow-up
+## 7. Consultation                    (who has reviewed, their views)
+
+Appendices: <only what answers a question a member is likely to ask; each appendix referenced from the main paper>
+```
+**Length:** executive summary max 1 page, main paper (sections 1–7) **max 5 pages**. Aim for less.
+
+## Board / RCC adaptation
+- Add one line at the top of the executive summary: **"Why this matters to the Board"**.
+- Link explicitly to strategy and risk appetite.
+- Replace technical terms with plain language; move methodology to appendix.
+- State the outcome at each prior committee.
+
+## Information paper (shorter variant)
+```
+# <Heading with the message>
+## Executive summary (3–5 sentences)
+## What has happened
+## What it means for us and our customers
+## Next steps / what we will come back with
 ```
 
-## Decision paper (English)
+## Svensk version av standardmallen
 ```
-# <Heading stating the recommendation>
-To / From / Date / Item type: Decision
-## Proposed resolution
-The Committee is asked to resolve that …
-## Executive summary
-## Background
-## Customer and business impact
-## Options considered
-## Risks and mitigation
-## Cost, resources and timeline
-## Consultation
-## Appendices
+# <Rubrik som anger förslaget>
+## Sammanfattning (max 1 sida)
+**Förslag till beslut:** <Kommittén> föreslås besluta att …
+## 1. Bakgrund och varför nu
+## 2. Förslag
+## 3. Effekter – kunder, ekonomi, kapital/likviditet, risk
+## 4. Alternativ som övervägts
+## 5. Risker och hantering
+## 6. Genomförande, ägarskap och uppföljning
+## 7. Förankring
+Bilagor
 ```
-
-## Styrelse-PM (tillägg)
-- Börja med en ruta **"Varför styrelsen ska bry sig"** (2 meningar).
-- Koppla uttryckligen till strategi och riskaptit.
-- Ange vilka instanser som behandlat ärendet och deras ställningstagande.
