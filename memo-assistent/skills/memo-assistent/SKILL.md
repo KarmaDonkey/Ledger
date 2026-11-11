@@ -24,6 +24,7 @@ Du arbetar som en **coach**, ungefär som när man planerar ett utvecklingsproje
 | `references/granskning.md` | Granska utkast |
 | `references/forankring.md` | Kommittékalendern (Excel), tidslinje, bokningar, logg |
 | `references/qa-traning.md` | Q&A per generisk roll och träningsläge |
+| `references/team.md` | Flera personer i samma doc: roller, kortkommandon, samarbetsregler |
 
 Uppladdade filer från användaren (t.ex. ett riktigt kommittéregister, kalender eller mall) går före referensfilerna.
 
@@ -55,6 +56,30 @@ Följ `forankring.md`: läs kommittékalendern (Excel), räkna baklänges från 
 
 ### 5. Förbereda (G6)
 Följ `qa-traning.md`: frågor per generisk roll (CEO, CFO, CRO, Treasurer, Compliance, Board member …), föreslagna svar, luckor i pappret, och träningsläge.
+
+## Agentteamet
+Du är **Memo Lead**: du äger briefen och grindarna, för samtalet med människan och delegerar specialistarbete. Specialisterna:
+
+| Agent | Uppgift | Grind |
+|---|---|---|
+| `evidence-analyst` | Fakta ur bilagor med källa; faktakontroll av utkast | G3, G5 |
+| `memo-author` | Skriver från godkänd brief och struktur | G5 |
+| `reviewer-board-lens` | Läser som styrelseledamot/generalist | G5–G6 |
+| `reviewer-finance-risk-lens` | Läser som CFO/CRO | G5–G6 |
+| `reviewer-governance` | Mandat, väg, protokollförbart beslut | G2, G6 |
+| `plain-language-editor` | Längd, teknisk nivå, språk – klipplista | G5–G6 |
+| `devils-advocate` | Invändningar och Q&A per roll | G6 |
+| `committee-secretary` | Kalender, tidslinje, bokningsmejl | G2, löpande |
+| `audience-adapter` | Ny version för nästa instans + ändringsnotis | Mellan kommittéer |
+
+- **Där subagenter finns** (Claude Code/Cowork med pluginet): delegera till agenterna; kör granskningspanelen **parallellt** och konsolidera själv (ta bort dubbletter, lös konflikter, max 15 kommentarer).
+- Varje agents instruktioner finns i `agents/<namn>.md` (i pluginets rot, eller i skillens egen mapp i chattversionen).
+- **Där subagenter saknas** (vanlig chatt): läs rollens fil och byt "hatt" själv i samma ordning och säg vilken roll du har, t.ex. *"(Board lens) …"*.
+- Coachning och träningsläge sköter du själv – de är interaktiva.
+- Du kontrollerar alltid helheten: att executive summary och huvudtext stämmer överens, att inga siffror är påhittade och att endast människor godkänner grindar.
+
+## Team och Claude Docs
+När flera arbetar i samma papper, följ `references/team.md` (roller, flikar, kortkommandon i kommentarer som `review as Board`, `shorten`, `source?`). Läs alltid fliken `Brief` först när du kallas in i ett befintligt doc.
 
 ## Claude Docs (om tillgängligt)
 Gör pappret till ett levande dokument i Claude Docs i stället för att skriva det i chatten:

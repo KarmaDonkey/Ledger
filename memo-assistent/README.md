@@ -1,50 +1,63 @@
-# Memoassistent – proof of concept
+# Memo Studio – proof of concept
 
-En Claude-native **memocoach** som hjälper till att **planera, skriva, granska, förankra och förbereda** committee papers genom vägen TC → GAC → GEC → RCC → Board. Byggd som en **Claude Skill** som arbetar i **Claude Docs**.
+En Claude-native **memocoach med ett agentteam** som hjälper ett team att **planera, skriva, granska, förankra och förbereda** committee papers genom vägen TC → GAC → GEC → RCC → Board, och att samarbeta kring papperen i **Claude Docs**.
 
 > All data här (kommittémandat, kalender, testutkast) är **påhittad**.
 
+## Agentteamet
+```
+                         ┌──────────────────────────────┐
+     Människan  ◀──────▶ │  MEMO LEAD (coach, master)   │  äger brief + grindar G0–G6
+     (Owner/team)        │  coachning · träningsläge    │  konsoliderar · kvalitetskontroll
+                         └──────────────┬───────────────┘
+        ┌──────────────┬────────────────┼─────────────────┬──────────────────┐
+        ▼              ▼                ▼                 ▼                  ▼
+ evidence-analyst  memo-author   GRANSKNINGSPANEL     devils-advocate   committee-secretary
+ fakta + källor    skriver       (parallellt)         invändningar,     kalender, tidslinje,
+ faktakontroll     utkast        · board-lens         Q&A per roll      bokningsmejl
+                                 · finance-risk-lens
+                                 · governance                           audience-adapter
+                                 · plain-language-editor                ny nivå per instans
+                                                                        + ändringsnotis
+```
+- **Memo Lead** är huvudkonversationen: den intervjuar, delegerar, slår ihop granskningar, löser konflikter och ser till att bara människor godkänner grindar.
+- I **Claude Code / Cowork** körs specialisterna som riktiga subagenter, med granskningspanelen parallellt. I **vanlig chatt** byter Memo Lead ”hatt” och tar rollerna i tur och ordning.
+
 ## Innehåll
 ```
-memo-assistent/
-├── memo-assistent/            ← själva skillen
-│   ├── SKILL.md               ← coach-hållning, fem lägen, Claude Docs-arbetssätt
-│   └── references/
-│       ├── coachning.md        grindar G0–G6, kontrollfrågor, coachande motstånd
-│       ├── kommitteer.md       TC, GAC, GEC, RCC, Board: mandat, roller, gemensamt format
-│       ├── publikprofiler.md   Expert / Ledning / Styrelse ("SvD Näringsliv-läsaren")
-│       ├── skrivprinciper.md   mottagare, slutsats först, kundperspektiv, längd
-│       ├── writing-rules-en.md brittisk engelska, plain English, svengelska-fällor
-│       ├── skrivregler-sv.md   klarspråk, siffror, förkortningar
-│       ├── mallar.md           memobrief + gemensam mall (exec summary + max 5 sidor + appendix)
-│       ├── granskning.md       granskningsmetod och kommentarskategorier
-│       ├── forankring.md       kommittékalender (Excel), baklängesplanering, bokningar, logg
-│       └── qa-traning.md       Q&A per generisk roll, träningsläge med feedback
-├── exempel/
-│   ├── draft-irrbb-limit-framework.md   testutkast (engelska) med avsiktliga brister
-│   └── committee-calendar.xlsx          fiktiv kommittékalender dec 2026 – dec 2027
-└── memo-assistent.skill       ← zip att ladda upp i Claude
+memo-assistent/                      ← plugin "memo-studio"
+├── .claude-plugin/plugin.json
+├── skills/memo-assistent/           ← coach-skillen
+│   ├── SKILL.md
+│   └── references/                  coachning, kommittéer, mallar, granskning, förankring, Q&A, team, språkregler
+├── agents/                          ← 9 specialistagenter
+├── commands/                        ← /memo-new  /memo-review  /memo-plan  /memo-qa
+├── exempel/                         ← committee-calendar.xlsx, draft-irrbb-limit-framework.md
+├── build.sh                         ← bygger memo-assistent.skill för claude.ai-chatten
+└── memo-assistent.skill
+../.claude-plugin/marketplace.json   ← gör repot till en plugin-marknadsplats för teamet
 ```
 
 ## Installera
-1. Ladda ner `memo-assistent.skill` (en zip-fil).
-2. claude.ai → inställningarna för **Skills** (Settings → Capabilities/Customize) → **Upload skill**.
-3. Slå på **Claude Docs** (och gärna kalender/mejl-connector).
+**Claude Code / Cowork (pluginet med agenter och kommandon):**
+```
+/plugin install memo-studio --marketplace KarmaDonkey/Ledger
+```
 
-Alternativ: ett **Claude Project** med `SKILL.md` som instruktion och `references/` + kalendern som projektkunskap. Då slipper man ladda upp kalendern varje gång.
+**claude.ai-chatten (bara skillen):** ladda upp `memo-assistent.skill` under inställningarna för Skills. Slå på Claude Docs.
+
+## Dela med teamet
+1. **Samma verktyg för alla:** teamet installerar pluginet från marknadsplatsen, eller så lägger en admin ut skillen för hela organisationen.
+2. **Delat projekt ”Memo Studio”:** kommittéregister, kalender och ett bibliotek med godkända papper som kunskap.
+3. **Ett papper = ett delat Claude Doc** med flikarna Paper, Brief, Q&A, Plan och Log. Kollegor kommenterar och kan kalla på Claude i tråden med kortkommandon som `review as Board`, `shorten`, `source?` och `to appendix?`. Se `skills/memo-assistent/references/team.md`.
 
 ## Prova
-| Läge | Exempel |
+| Kommando | Exempel |
 |---|---|
-| Planera (coach) | "Jag ska skriva ett papper om nya IRRBB-limiter, det ska hela vägen till styrelsen." |
-| Granska | Bifoga `draft-irrbb-limit-framework.md`: "Granska – det ska till GAC och sedan GEC." |
-| Förankra | Bifoga `committee-calendar.xlsx`: "Målet är styrelsen 21 april. Går det ihop?" |
-| Förbereda | "Ta fram Q&A inför RCC" → "Kör träningsläge, tuff nivå, som styrelsemöte." |
+| `/memo-new` | `/memo-new nya IRRBB-limiter, hela vägen till styrelsen` |
+| `/memo-review` | `/memo-review exempel/draft-irrbb-limit-framework.md GAC` |
+| `/memo-plan` | `/memo-plan Board 21 April exempel/committee-calendar.xlsx` |
+| `/memo-qa` | `/memo-qa RCC tough` |
 
 ## Byta till riktiga data
-Ersätt `references/kommitteer.md` och kalendern med era (samma rubriker/kolumner). Bygg om paketet med `zip -r memo-assistent.skill memo-assistent` i den här mappen.
-
-## Nästa steg (idéer)
-- Bilder ur färdigt papper (Slides-artifact eller .pptx).
-- Statusöversikt över alla pågående papper, kopplad till kalendern.
-- Minne per kommitté: vilka frågor som brukar komma, uppdateras från loggen.
+Byt ut `references/kommitteer.md` och kalendern mot era egna. Kör `./build.sh` för att bygga om chattpaketet.

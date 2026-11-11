@@ -1,0 +1,11 @@
+{
+  "name": "team-tools",
+  "owner": { "name": "Team" },
+  "plugins": [
+    {
+      "name": "memo-studio",
+      "source": "./memo-assistent",
+      "description": "Memo coach and agent team for committee papers, working in Claude Docs."
+    }
+  ]
+}
