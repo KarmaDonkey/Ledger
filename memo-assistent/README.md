@@ -52,6 +52,16 @@ memo-assistent/                      ← plugin "memo-studio" (källan till allt
 - **Personlig skill:** ladda upp `memo-assistent.skill` i Skills-inställningarna.
 - **Claude Code / Cowork med riktiga subagenter:** `/plugin install memo-studio --marketplace KarmaDonkey/Ledger` (efter merge till huvudbranchen).
 
+## Teamets översikt (Kommittéflödet)
+`oversikt/memo-pipeline.html` är publicerad som en Claude-artifact med delad databas. Den visar alla papper i flödet:
+- vägen genom TC → GAAC → GEC → RCC → Board
+- grind och ägare för varje papper
+- pre-read-deadlines och vad som är bokat
+- en kalender som räknas fram från rytmen, med flyttade, extra, ad hoc- och inställda möten som undantag
+
+Du kan importera Excel- eller CSV-kalendern (bokningar matchas mot papperens titlar) och exportera tillbaka till CSV.
+Dela artifacten med teamet via Share-menyn.
+
 ## Kommittérytmen
 | Kommitté | Möte | Pre-read-deadline |
 |---|---|---|

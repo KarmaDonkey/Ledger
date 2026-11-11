@@ -1,0 +1,545 @@
+<title>Memo Studio Pipeline</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap">
+<style>
+/* Layout: a governance "rail" – each paper is a row travelling TC → GAAC → GEC → RCC → Board; summary first, detail below. */
+:root{
+  --bg:#F3F5F8; --surface:#FFFFFF; --ink:#15202C; --muted:#5B6877; --line:#D9DFE7; --soft:#E9EDF3;
+  --accent:#2347A8; --accent-ink:#FFFFFF; --accent-soft:#E3E9F8;
+  --ok:#23784F; --ok-soft:#E0F2E8; --warn:#A8650B; --warn-soft:#FBEFD9; --bad:#B4321F; --bad-soft:#FAE3DF;
+  --font-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-head:"IBM Plex Sans Condensed","IBM Plex Sans",system-ui,sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0F151C; --surface:#18212B; --ink:#E6EBF1; --muted:#9AA7B5; --line:#2C3845; --soft:#212C38;
+  --accent:#8FA9F0; --accent-ink:#0F151C; --accent-soft:#22304D;
+  --ok:#6CC79A; --ok-soft:#183427; --warn:#E3B061; --warn-soft:#3A2C14; --bad:#F08A78; --bad-soft:#3E1F1A; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0F151C; --surface:#18212B; --ink:#E6EBF1; --muted:#9AA7B5; --line:#2C3845; --soft:#212C38;
+  --accent:#8FA9F0; --accent-ink:#0F151C; --accent-soft:#22304D;
+  --ok:#6CC79A; --ok-soft:#183427; --warn:#E3B061; --warn-soft:#3A2C14; --bad:#F08A78; --bad-soft:#3E1F1A; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:15px/1.5 var(--font-body)}
+.wrap{max-width:1120px;margin:0 auto;padding-block:20px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:20px}
+h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance}
+h1{font-size:26px;letter-spacing:.01em}
+h2{font-size:18px}
+.mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+.label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
+header.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px}
+.tabs{display:flex;gap:4px;background:var(--soft);padding:4px;border-radius:8px}
+.tabs button{border:0;background:transparent;color:var(--muted);padding:6px 14px;border-radius:6px;font:inherit;font-weight:500;cursor:pointer}
+.tabs button[aria-selected="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.btn{border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:8px 14px;border-radius:7px;font:inherit;font-weight:500;cursor:pointer;white-space:nowrap}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.danger{color:var(--bad);border-color:var(--bad)}
+.btn.link{border:0;background:none;color:var(--accent);padding:4px 0}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.notice{padding:10px 14px;border-radius:8px;background:var(--accent-soft);font-size:14px}
+.notice.bad{background:var(--bad-soft)}
+
+/* summary */
+.summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) minmax(0,2fr);gap:12px}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:4px}
+.stat .num{font-family:var(--font-head);font-size:30px;font-weight:600;line-height:1.1}
+.stat.warn .num{color:var(--warn)} .stat.bad .num{color:var(--bad)}
+.upcoming{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px;min-width:0}
+.upcoming ul{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
+.upcoming li{display:grid;grid-template-columns:86px 58px minmax(0,1fr) auto;gap:8px;align-items:baseline;font-size:14px}
+.upcoming li .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media (max-width:820px){.summary{grid-template-columns:repeat(3,minmax(0,1fr))}.upcoming{grid-column:1/-1}}
+@media (max-width:480px){.upcoming li{grid-template-columns:78px 52px minmax(0,1fr)}.upcoming li .flagtxt{display:none}}
+
+/* pills */
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:2px 9px;border-radius:999px;background:var(--soft);color:var(--ink);white-space:nowrap}
+.pill.ok{background:var(--ok-soft);color:var(--ok)} .pill.warn{background:var(--warn-soft);color:var(--warn)} .pill.bad{background:var(--bad-soft);color:var(--bad)}
+.pill.accent{background:var(--accent-soft);color:var(--accent)}
+.com{font-family:var(--font-mono);font-size:12px;font-weight:500;padding:1px 6px;border-radius:4px;background:var(--soft);color:var(--ink)}
+
+/* paper rows */
+.papers{display:flex;flex-direction:column;gap:12px}
+.paper{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:12px;position:relative}
+.paper::before{content:"";position:absolute;left:0;top:12px;bottom:12px;width:3px;border-radius:0 3px 3px 0;background:var(--ok)}
+.paper.warn::before{background:var(--warn)} .paper.bad::before{background:var(--bad)}
+.paper-head{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;justify-content:space-between}
+.paper-title{display:flex;flex-direction:column;gap:2px;min-width:0}
+.paper-title h3{font-size:17px}
+.meta{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;font-size:13px;color:var(--muted)}
+.meta a{color:var(--accent)}
+.rail-scroll{overflow-x:auto;margin:0 -4px;padding:0 4px}
+.rail{display:grid;grid-template-columns:repeat(var(--n),minmax(96px,1fr));position:relative;min-width:calc(var(--n) * 100px)}
+.rail::before{content:"";position:absolute;left:calc(50% / var(--n));right:calc(50% / var(--n));top:9px;height:2px;background:var(--line)}
+.stop{display:flex;flex-direction:column;align-items:center;gap:3px;text-align:center;position:relative;padding:0 4px}
+.dot{width:20px;height:20px;border-radius:50%;border:2px solid var(--line);background:var(--surface);z-index:1;display:grid;place-items:center;font-size:11px;font-weight:700;color:var(--surface)}
+.stop.in .dot{border-color:var(--accent)}
+.stop.done .dot{background:var(--ok);border-color:var(--ok)}
+.stop.sub .dot{background:var(--accent);border-color:var(--accent)}
+.stop.ret .dot{background:var(--bad);border-color:var(--bad)}
+.stop.off{opacity:.38}
+.stop .name{font-family:var(--font-mono);font-size:12px;font-weight:500}
+.stop .date{font-size:12px}
+.stop .bk{font-size:11px}
+.bk.yes{color:var(--ok)} .bk.no{color:var(--warn)} .bk.prop{color:var(--accent)}
+.empty{background:var(--surface);border:1px dashed var(--line);border-radius:10px;padding:28px 20px;display:flex;flex-direction:column;gap:12px;align-items:flex-start}
+.empty p{margin:0;max-width:62ch}
+
+/* calendar */
+.cal{display:flex;flex-direction:column;gap:16px}
+.week{background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.week h3{font-size:14px;padding:8px 14px;background:var(--soft);display:flex;justify-content:space-between;gap:8px}
+.mtg{display:grid;grid-template-columns:92px 66px minmax(0,1fr) auto;gap:10px;align-items:baseline;padding:8px 14px;border-top:1px solid var(--line);font-size:14px}
+.mtg:first-of-type{border-top:0}
+.mtg .items{display:flex;flex-direction:column;gap:2px;min-width:0}
+.mtg .items span{overflow-wrap:anywhere}
+@media (max-width:560px){.mtg{grid-template-columns:78px 60px minmax(0,1fr)}.mtg .typ{grid-column:3}}
+.cal-tools{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
+@media (max-width:760px){.cal-tools{grid-template-columns:minmax(0,1fr)}}
+.box{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.ovl{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;font-size:14px}
+.ovl li{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+
+/* forms & panel */
+label.f{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:500;min-width:0}
+input,select,textarea{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:7px 9px;min-width:0;width:100%}
+textarea{min-height:70px;resize:vertical}
+.row2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
+@media (max-width:520px){.row2{grid-template-columns:minmax(0,1fr)}}
+.checks{display:flex;flex-wrap:wrap;gap:6px 14px}
+.checks label{display:flex;gap:6px;align-items:center;font-size:14px}
+.checks input{width:auto}
+.scrim{position:fixed;inset:0;background:rgba(10,15,22,.45);z-index:20;display:flex;justify-content:flex-end}
+.panel{background:var(--bg);width:min(620px,100%);height:100%;overflow-y:auto;padding-block:max(18px,env(safe-area-inset-top,0px)) max(24px,env(safe-area-inset-bottom,0px));padding-left:18px;padding-right:max(18px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:14px;box-shadow:-8px 0 30px rgba(0,0,0,.2)}
+.steps-scroll{overflow-x:auto}
+table.steps{border-collapse:collapse;width:100%;min-width:520px;font-size:13px}
+table.steps th{text-align:left;font-weight:600;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.06em;padding:4px 6px}
+table.steps td{padding:4px 6px;border-top:1px solid var(--line);vertical-align:middle}
+table.steps select,table.steps input{padding:5px 6px;font-size:13px}
+.owner-results{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:6px;background:var(--surface);max-height:180px;overflow-y:auto}
+.owner-results button{border:0;background:none;text-align:left;padding:7px 10px;font:inherit;color:var(--ink);cursor:pointer}
+.owner-results button:hover{background:var(--soft)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:max(18px,env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:8px;z-index:30;font-size:14px;max-width:calc(100% - 32px)}
+footer{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;font-size:13px;color:var(--muted)}
+@media (prefers-reduced-motion:no-preference){.paper,.week{transition:border-color .15s}}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <div class="label">Memo Studio</div>
+      <h1>Kommittéflödet</h1>
+      <div class="muted small">TC → GAAC → GEC → RCC → Board · <span id="today" class="mono"></span></div>
+    </div>
+    <div class="actions">
+      <div class="tabs" role="tablist">
+        <button role="tab" id="tab-pipe" aria-selected="true">Papper</button>
+        <button role="tab" id="tab-cal" aria-selected="false">Kalender</button>
+      </div>
+      <button class="btn primary" id="new-paper">Nytt papper</button>
+    </div>
+  </header>
+
+  <div id="db-notice" class="notice" hidden></div>
+
+  <section id="view-pipe" class="papers-view" style="display:flex;flex-direction:column;gap:20px">
+    <div class="summary" id="summary"></div>
+    <div class="papers" id="papers"></div>
+  </section>
+
+  <section id="view-cal" hidden>
+    <div class="cal">
+      <div class="cal-tools">
+        <div class="box">
+          <h2>Undantag i kalendern</h2>
+          <p class="muted small" style="margin:0">Standardrytmen räknas fram automatiskt. Lägg till flyttade möten, extramöten, ad hoc-kommittéer och inställda möten här, eller importera ert Excel-ark.</p>
+          <ul class="ovl" id="ovl-list"></ul>
+          <div class="actions">
+            <button class="btn" id="add-ovl">Lägg till undantag</button>
+            <label class="btn" for="import-file" id="import-label">Importera Excel/CSV</label>
+            <input type="file" id="import-file" accept=".xlsx,.xls,.csv" hidden>
+            <button class="btn" id="export-csv">Exportera kalender (CSV)</button>
+          </div>
+        </div>
+        <div class="box" id="ovl-form" hidden>
+          <h2>Nytt undantag</h2>
+          <div class="row2">
+            <label class="f">Typ<select id="o-type"><option>Moved</option><option>Extra</option><option>Ad hoc</option><option>Cancelled</option></select></label>
+            <label class="f">Kommitté<input id="o-com" list="com-list" placeholder="t.ex. GAAC eller Basel Steering Group"></label>
+          </div>
+          <datalist id="com-list"><option>TC</option><option>GAAC</option><option>GEC</option><option>RCC</option><option>Board</option></datalist>
+          <div class="row2">
+            <label class="f">Mötesdatum<input type="date" id="o-date"></label>
+            <label class="f" id="o-orig-wrap">Ursprungligt datum (flyttat)<input type="date" id="o-orig"></label>
+          </div>
+          <div class="row2">
+            <label class="f">Pre-read-deadline (tomt = enligt regel)<input type="date" id="o-dl"></label>
+            <label class="f">Kommentar<input id="o-comment"></label>
+          </div>
+          <div class="actions"><button class="btn primary" id="o-save">Spara undantag</button><button class="btn" id="o-cancel">Avbryt</button></div>
+        </div>
+      </div>
+      <div id="weeks" class="cal"></div>
+    </div>
+  </section>
+
+  <footer>
+    <span>Rytm: TC tors (deadline mån) · GAAC tis (deadline tors veckan innan) · GEC mån (deadline fre veckan innan) · RCC 3:e onsdagen · Board 3:e torsdagen (deadline 9 dagar innan).</span>
+    <button class="btn link" id="load-examples" hidden>Ladda exempeldata</button>
+    <button class="btn link" id="clear-examples" hidden>Ta bort exempeldata</button>
+  </footer>
+</div>
+
+<div class="scrim" id="scrim" hidden>
+  <div class="panel" role="dialog" aria-modal="true" aria-labelledby="p-heading">
+    <div class="actions" style="justify-content:space-between"><h2 id="p-heading">Papper</h2><button class="btn" id="p-close">Stäng</button></div>
+    <label class="f">Titel<input id="p-title" placeholder="t.ex. Revised IRRBB limit framework"></label>
+    <div class="row2">
+      <label class="f">Ärendetyp<select id="p-kind"><option>Decision</option><option>Information</option><option>Discussion</option></select></label>
+      <label class="f">Grind<select id="p-gate"></select></label>
+    </div>
+    <label class="f">Länk till pappret i Claude Docs<input id="p-doc" placeholder="https://claude.ai/…"></label>
+    <div class="f" id="owner-wrap">
+      <span class="label" style="text-transform:none;letter-spacing:0;font-size:13px;color:var(--ink);font-weight:500">Ägare</span>
+      <div class="actions"><span id="owner-name" class="muted">Ingen vald</span><button class="btn link" id="owner-me">Jag</button></div>
+      <input id="owner-q" placeholder="Sök kollega">
+      <div class="owner-results" id="owner-results" hidden></div>
+    </div>
+    <div class="f">
+      <span style="font-size:13px;font-weight:500">Väg</span>
+      <div class="checks" id="p-path"></div>
+      <div class="row2">
+        <label class="f">Ad hoc-instans (valfri)<input id="p-adhoc" placeholder="t.ex. Basel Steering Group"></label>
+        <label class="f">…placeras före<select id="p-adhoc-before"></select></label>
+      </div>
+    </div>
+    <div class="row2">
+      <label class="f">Målmöte<select id="p-target"></select></label>
+      <label class="f">Buffert mellan instanser (arbetsdagar)<input type="number" id="p-buffer" min="0" max="15" value="3"></label>
+    </div>
+    <div class="actions"><button class="btn" id="p-plan">Planera baklänges</button><span class="muted small" id="p-plan-msg"></span></div>
+    <div class="steps-scroll"><table class="steps"><thead><tr><th>Instans</th><th>Möte</th><th>Pre-read</th><th>Bokad</th><th>Status</th></tr></thead><tbody id="p-steps"></tbody></table></div>
+    <label class="f">Anteckningar<textarea id="p-notes" placeholder="Öppna frågor, feedback från förra instansen …"></textarea></label>
+    <div class="actions" style="justify-content:space-between">
+      <div class="actions"><button class="btn primary" id="p-save">Spara</button><button class="btn" id="p-cancel">Avbryt</button></div>
+      <div class="actions"><button class="btn danger" id="p-delete">Ta bort</button><button class="btn danger" id="p-delete-confirm" hidden>Bekräfta borttagning</button></div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+const ORDER=["TC","GAAC","GEC","RCC","Board"];
+const GATES=[["G0","Kontext"],["G1","Syfte"],["G2","Publik och väg"],["G3","Underlag"],["G4","Struktur"],["G5","Utkast"],["G6","Redo att skicka"]];
+const STATUSES=["Planned","Paper submitted","Presented","Approved","Approved with conditions","Returned","Noted"];
+const DONE=new Set(["Approved","Approved with conditions","Noted","Presented"]);
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+/* ---------- dates & rules (same rules as scripts/committee_rules.py) ---------- */
+const pad=n=>String(n).padStart(2,"0");
+const iso=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const parse=s=>{const [y,m,d]=s.split("-").map(Number);return new Date(y,m-1,d)};
+const addDays=(d,n)=>{const x=new Date(d);x.setDate(x.getDate()+n);return x};
+const TODAY=(()=>{const n=new Date();return new Date(n.getFullYear(),n.getMonth(),n.getDate())})();
+const MON=["jan","feb","mar","apr","maj","jun","jul","aug","sep","okt","nov","dec"];
+const DOW=["sön","mån","tis","ons","tors","fre","lör"];
+const nice=s=>{if(!s)return"—";const d=parse(s);return `${d.getDate()} ${MON[d.getMonth()]}`};
+const niceY=s=>{if(!s)return"—";const d=parse(s);return `${d.getDate()} ${MON[d.getMonth()]} ${d.getFullYear()}`};
+function easter(y){const a=y%19,b=Math.floor(y/100),c=y%100,d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30,i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7,m=Math.floor((a+11*h+22*l)/451),mo=Math.floor((h+l-7*m+114)/31),da=((h+l-7*m+114)%31)+1;return new Date(y,mo-1,da)}
+const HOL={};
+function holidays(y){if(HOL[y])return HOL[y];const e=easter(y);let ms;for(let d=19;d<=25;d++){const x=new Date(y,5,d);if(x.getDay()===5){ms=x;break}}
+  HOL[y]=new Set([new Date(y,0,1),new Date(y,0,6),addDays(e,-2),addDays(e,1),addDays(e,39),new Date(y,4,1),new Date(y,5,6),ms,new Date(y,11,24),new Date(y,11,25),new Date(y,11,26),new Date(y,11,31)].map(iso));return HOL[y]}
+const isBD=d=>d.getDay()%6!==0&&!holidays(d.getFullYear()).has(iso(d));
+const prevBD=d=>{while(!isBD(d))d=addDays(d,-1);return d};
+function minusBD(d,n){while(n>0){d=addDays(d,-1);if(isBD(d))n--}return d}
+function bdBetween(a,b){let n=0,d=new Date(a);if(b<=a)return -1;while(d<b){d=addDays(d,1);if(isBD(d))n++}return n}
+const OFFSET={TC:3,GAAC:5,GEC:3,RCC:9,Board:9};
+const ruleDeadline=(c,dateIso)=>OFFSET[c]==null?null:iso(prevBD(addDays(parse(dateIso),-OFFSET[c])));
+function nthWeekday(y,m,wd,n){let d=new Date(y,m,1);while(d.getDay()!==wd)d=addDays(d,1);return addDays(d,7*(n-1))}
+function ruleMeetings(from,to){const out=[];for(let d=new Date(from);d<=to;d=addDays(d,1)){const w=d.getDay();if(w===4)out.push(["TC",d]);if(w===2)out.push(["GAAC",d]);if(w===1)out.push(["GEC",d])}
+  let y=from.getFullYear(),m=from.getMonth();while(y<to.getFullYear()||(y===to.getFullYear()&&m<=to.getMonth())){for(const [c,wd] of [["RCC",3],["Board",4]]){const md=nthWeekday(y,m,wd,3);if(md>=from&&md<=to)out.push([c,md])}m++;if(m>11){m=0;y++}}
+  return out.filter(([,d])=>isBD(d)).map(([c,d])=>({committee:c,date:iso(d),deadline:ruleDeadline(c,iso(d)),type:"Ordinary",comment:""}))}
+
+/* ---------- state ---------- */
+let db=null,user=null,downloads=null,meId=null,canWrite=true;
+let papers=[],overrides=[],profiles={};
+let editing=null,draft=null;
+
+function meetings(fromIso,toIso){
+  const from=parse(fromIso),to=parse(toIso);
+  const drop=new Set();
+  for(const o of overrides){if(o.type==="Cancelled")drop.add(o.committee+"|"+o.date);if(o.type==="Moved"&&o.originalDate)drop.add(o.committee+"|"+o.originalDate)}
+  let list=ruleMeetings(from,to).filter(m=>!drop.has(m.committee+"|"+m.date));
+  for(const o of overrides){if(o.type==="Cancelled")continue;if(o.date<fromIso||o.date>toIso)continue;
+    list=list.filter(m=>!(m.committee===o.committee&&m.date===o.date));
+    list.push({committee:o.committee,date:o.date,deadline:o.deadline||ruleDeadline(o.committee,o.date)||o.date,type:o.type,comment:o.comment||""})}
+  const rank=c=>{const i=ORDER.indexOf(c);return i<0?2.5:i};
+  return list.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:rank(a.committee)-rank(b.committee));
+}
+function plan(path,targetDate,buffer){
+  const horizonFrom=iso(TODAY),horizonTo=targetDate;
+  const all=meetings(horizonFrom,horizonTo);
+  const last=path[path.length-1];
+  const target=all.find(m=>m.committee===last&&m.date===targetDate);
+  if(!target)return {error:`Inget ${last}-möte ${niceY(targetDate)}.`};
+  const steps=[target];
+  for(let i=path.length-2;i>=0;i--){
+    const latest=iso(minusBD(parse(steps[0].deadline),buffer));
+    const c=all.filter(m=>m.committee===path[i]&&m.date>=horizonFrom&&m.date<=latest);
+    if(!c.length){steps.unshift({committee:path[i],date:"",deadline:"",type:""});return {steps,error:`Inget ${path[i]}-möte hinns före ${nice(steps[1].deadline)} – välj ett senare målmöte eller ett extramöte.`}}
+    steps.unshift(c[c.length-1]);
+  }
+  return {steps};
+}
+
+/* ---------- paper status ---------- */
+function nextStep(p){return (p.steps||[]).find(s=>!DONE.has(s.status||""))}
+function assess(p){
+  const steps=p.steps||[];const ns=nextStep(p);
+  if(!steps.length)return {level:"warn",text:"Ingen plan än"};
+  if(!ns)return {level:"ok",text:"Klar"};
+  if(!ns.date)return {level:"bad",text:`${ns.committee} saknar möte`};
+  const unbooked=steps.filter(s=>!DONE.has(s.status||"")&&s.booked!=="Yes").length;
+  if(ns.status==="Returned")return {level:"bad",text:`Återremitterad i ${ns.committee}`};
+  if(ns.status!=="Paper submitted"&&ns.deadline){
+    const dl=parse(ns.deadline);
+    if(dl<TODAY)return {level:"bad",text:`Pre-read till ${ns.committee} försenad`};
+    const n=bdBetween(TODAY,dl);
+    if(n<=5)return {level:"bad",text:n===0?`Pre-read till ${ns.committee} i dag`:`${n} arbetsdag${n===1?"":"ar"} till pre-read ${ns.committee}`};
+  }
+  if(unbooked)return {level:"warn",text:`${unbooked} steg obokade`};
+  return {level:"ok",text:`Nästa: ${ns.committee} ${nice(ns.date)}`};
+}
+
+/* ---------- render: pipeline ---------- */
+function ownerName(id){return id&&profiles[id]?(profiles[id].name||"Någon"):""}
+async function resolveProfiles(ids){if(!user)return;const need=ids.filter(Boolean);if(!need.length)return;try{Object.assign(profiles,await user.profiles(need))}catch(e){}}
+
+function renderSummary(){
+  const active=papers.filter(p=>nextStep(p));
+  const unbooked=active.reduce((n,p)=>n+(p.steps||[]).filter(s=>!DONE.has(s.status||"")&&s.booked!=="Yes").length,0);
+  const horizon=iso(addDays(TODAY,21));
+  const dl=[];
+  for(const p of active)for(const s of p.steps||[]){if(DONE.has(s.status||"")||s.status==="Paper submitted"||!s.deadline)continue;if(s.deadline<=horizon)dl.push({p,s})}
+  dl.sort((a,b)=>a.s.deadline<b.s.deadline?-1:1);
+  const soon=dl.filter(x=>parse(x.s.deadline)<TODAY||bdBetween(TODAY,parse(x.s.deadline))<=10).length;
+  $("summary").innerHTML=`
+    <div class="stat"><span class="label">Papper i flödet</span><span class="num mono">${active.length}</span><span class="small muted">${papers.length-active.length} klara</span></div>
+    <div class="stat ${soon?"bad":""}"><span class="label">Pre-read inom 10 arbetsdagar</span><span class="num mono">${soon}</span><span class="small muted">ej inskickade</span></div>
+    <div class="stat ${unbooked?"warn":""}"><span class="label">Obokade steg</span><span class="num mono">${unbooked}</span><span class="small muted">boka hos sekreteraren</span></div>
+    <div class="upcoming"><span class="label">Kommande pre-read-deadlines · 3 veckor</span>
+      ${dl.length?`<ul>${dl.slice(0,6).map(({p,s})=>{const late=parse(s.deadline)<TODAY;return `<li><span class="mono ${late?"":""}" style="${late?"color:var(--bad)":""}">${nice(s.deadline)}</span><span><span class="com">${esc(s.committee)}</span></span><span class="t">${esc(p.title)}</span><span class="flagtxt small ${s.booked==="Yes"?"muted":""}" style="${s.booked==="Yes"?"":"color:var(--warn)"}">${s.booked==="Yes"?"bokad":"ej bokad"}</span></li>`}).join("")}</ul>`:`<p class="small muted" style="margin:8px 0 0">Inga deadlines de närmaste tre veckorna.</p>`}
+    </div>`;
+}
+function railFor(p){
+  const steps=p.steps||[];
+  const names=[...ORDER];
+  for(const s of steps)if(!names.includes(s.committee)){const idx=steps.indexOf(s);const after=steps.slice(idx+1).map(x=>x.committee).find(c=>names.includes(c));const at=after?names.indexOf(after):names.length;names.splice(at,0,s.committee)}
+  const ns=nextStep(p);
+  return `<div class="rail-scroll"><div class="rail" style="--n:${names.length}">${names.map(c=>{
+    const s=steps.find(x=>x.committee===c);
+    if(!s)return `<div class="stop off"><span class="dot"></span><span class="name">${esc(c)}</span><span class="date muted">—</span></div>`;
+    const st=s.status||"";const cls=DONE.has(st)?"done":st==="Paper submitted"?"sub":st==="Returned"?"ret":"in";
+    const mark=DONE.has(st)?"✓":st==="Returned"?"!":"";
+    const bk=s.booked==="Yes"?`<span class="bk yes">bokad</span>`:s.booked==="Proposed"?`<span class="bk prop">föreslagen</span>`:`<span class="bk no">ej bokad</span>`;
+    return `<div class="stop ${cls}" title="${esc(c)}: ${esc(st||"Planned")}"><span class="dot">${mark}</span><span class="name">${esc(c)}</span><span class="date mono">${nice(s.date)}</span>${DONE.has(st)?`<span class="bk muted">${esc(st==="Approved with conditions"?"villkor":st.toLowerCase())}</span>`:bk}</div>`}).join("")}</div></div>`;
+}
+function renderPapers(){
+  const el=$("papers");
+  if(!db){el.innerHTML="";return}
+  if(!papers.length){
+    el.innerHTML=`<div class="empty"><h2>Inga papper i flödet än</h2><p>Varje papper får en rad här med sin väg genom kommittéerna, mötesdatum, pre-read-deadlines och om mötet är bokat. Lägg till ditt första papper, eller ladda exempeldata för att se hur det ser ut.</p><div class="actions"><button class="btn primary" data-act="new">Nytt papper</button><button class="btn" data-act="examples">Ladda exempeldata</button></div></div>`;return}
+  const sorted=[...papers].sort((a,b)=>{const ra={bad:0,warn:1,ok:2},x=assess(a),y=assess(b);if(ra[x.level]!==ra[y.level])return ra[x.level]-ra[y.level];const na=nextStep(a),nb=nextStep(b);return ((na&&na.deadline)||"9")<((nb&&nb.deadline)||"9")?-1:1});
+  el.innerHTML=sorted.map(p=>{const a=assess(p);const g=GATES.find(x=>x[0]===p.gate);const tgt=(p.steps||[]).slice(-1)[0];
+    return `<article class="paper ${a.level}"><div class="paper-head"><div class="paper-title"><h3>${esc(p.title||"Namnlöst papper")}</h3>
+      <div class="meta">${p.example?`<span class="pill">Exempel</span>`:""}<span>${esc(p.kind||"Decision")}</span>${ownerName(p.ownerId)?`<span>${esc(ownerName(p.ownerId))}</span>`:""}${tgt?`<span>Mål: ${esc(tgt.committee)} ${niceY(tgt.date)}</span>`:""}${p.docUrl&&/^https:\/\//.test(p.docUrl)?`<a href="${esc(p.docUrl)}" target="_blank" rel="noopener">Öppna i Claude Docs</a>`:""}</div></div>
+      <div class="actions"><span class="pill accent" title="Coachens grindstatus">${esc(p.gate||"G0")} ${g?esc(g[1]):""}</span><span class="pill ${a.level}">${esc(a.text)}</span><button class="btn" data-edit="${esc(p.id)}">Öppna</button></div></div>
+      ${railFor(p)}${p.notes?`<div class="small muted" style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(p.notes)}</div>`:""}</article>`}).join("");
+}
+
+/* ---------- render: calendar ---------- */
+function weekKey(d){const x=addDays(d,-((d.getDay()+6)%7));return iso(x)}
+function isoWeek(d){const t=new Date(d);t.setDate(t.getDate()+3-((t.getDay()+6)%7));const w1=new Date(t.getFullYear(),0,4);return 1+Math.round(((t-w1)/864e5-3+((w1.getDay()+6)%7))/7)}
+function renderCalendar(){
+  const ms=meetings(iso(TODAY),iso(addDays(TODAY,56)));
+  const byWeek={};for(const m of ms)(byWeek[weekKey(parse(m.date))]??=[]).push(m);
+  $("weeks").innerHTML=Object.keys(byWeek).sort().map(k=>{const d=parse(k);
+    return `<div class="week"><h3><span>Vecka ${isoWeek(d)}</span><span class="muted mono">${nice(k)} – ${nice(iso(addDays(d,6)))}</span></h3>${byWeek[k].map(m=>{
+      const items=papers.flatMap(p=>(p.steps||[]).filter(s=>s.committee===m.committee&&s.date===m.date).map(s=>({p,s})));
+      return `<div class="mtg"><span class="mono">${DOW[parse(m.date).getDay()]} ${nice(m.date)}</span><span><span class="com">${esc(m.committee)}</span></span>
+        <span class="items"><span class="small muted">Pre-read ${nice(m.deadline)}${m.comment?" · "+esc(m.comment):""}</span>${items.map(({p,s})=>`<span>${esc(p.title)} <span class="bk ${s.booked==="Yes"?"yes":s.booked==="Proposed"?"prop":"no"} small">${s.booked==="Yes"?"bokad":s.booked==="Proposed"?"föreslagen":"ej bokad"}</span></span>`).join("")}</span>
+        <span class="typ">${m.type!=="Ordinary"?`<span class="pill ${m.type==="Moved"?"warn":"accent"}">${esc({Moved:"Flyttat",Extra:"Extra","Ad hoc":"Ad hoc"}[m.type]||m.type)}</span>`:""}</span></div>`}).join("")}</div>`}).join("");
+  const ov=[...overrides].sort((a,b)=>a.date<b.date?-1:1);
+  $("ovl-list").innerHTML=ov.length?ov.map(o=>`<li><span class="pill ${o.type==="Cancelled"?"bad":o.type==="Moved"?"warn":"accent"}">${esc({Moved:"Flyttat",Extra:"Extra","Ad hoc":"Ad hoc",Cancelled:"Inställt"}[o.type]||o.type)}</span><span class="com">${esc(o.committee)}</span><span class="mono">${niceY(o.date)}</span>${o.type==="Moved"&&o.originalDate?`<span class="small muted">från ${nice(o.originalDate)}</span>`:""}${o.comment?`<span class="small muted">${esc(o.comment)}</span>`:""}${db&&canWrite?`<button class="btn link small" data-del-ovl="${esc(o.id)}">Ta bort</button>`:""}</li>`).join(""):`<li class="muted small">Inga undantag – standardrytmen gäller.</li>`;
+}
+function renderAll(){renderSummary();renderPapers();renderCalendar();
+  const hasEx=papers.some(p=>p.example)||overrides.some(o=>o.example);
+  $("load-examples").hidden=!db||!canWrite||hasEx;$("clear-examples").hidden=!db||!canWrite||!hasEx;
+  for(const b of [$("new-paper"),$("add-ovl"),$("import-label")])b.hidden=!db||!canWrite;
+}
+
+/* ---------- editor ---------- */
+function upcomingFor(committee){if(!committee)return[];return meetings(iso(TODAY),iso(addDays(TODAY,400))).filter(m=>m.committee===committee).slice(0,24)}
+function draftPath(){const p=ORDER.filter(c=>draft.path.includes(c));const ad=$("p-adhoc").value.trim();if(ad){const before=$("p-adhoc-before").value;const i=before?p.indexOf(before):-1;if(i<0)p.push(ad);else p.splice(i,0,ad)}return p}
+function fillTargetOptions(){const path=draftPath();const last=path[path.length-1];const sel=$("p-target");const opts=upcomingFor(last);
+  const cur=draft.target&&draft.target.committee===last?draft.target.date:"";
+  sel.innerHTML=opts.length?opts.map(m=>`<option value="${m.date}" ${m.date===cur?"selected":""}>${esc(last)} · ${DOW[parse(m.date).getDay()]} ${niceY(m.date)}${m.type!=="Ordinary"?" ("+esc(m.type)+")":""}</option>`).join(""):`<option value="">Inga kommande möten för ${esc(last||"–")}</option>`;
+  if(cur&&!opts.some(m=>m.date===cur))sel.insertAdjacentHTML("afterbegin",`<option value="${cur}" selected>${esc(last)} · ${niceY(cur)}</option>`);
+}
+function renderSteps(){
+  $("p-steps").innerHTML=draft.steps.map((s,i)=>`<tr><td><span class="com">${esc(s.committee)}</span></td>
+    <td><input type="date" id="st-date-${i}" value="${esc(s.date)}"></td>
+    <td><input type="date" id="st-dl-${i}" value="${esc(s.deadline)}"></td>
+    <td><select id="st-bk-${i}">${["No","Proposed","Yes"].map(v=>`<option value="${v}" ${s.booked===v?"selected":""}>${{No:"Nej",Proposed:"Föreslagen",Yes:"Ja"}[v]}</option>`).join("")}</select></td>
+    <td><select id="st-st-${i}">${STATUSES.map(v=>`<option ${s.status===v?"selected":""}>${v}</option>`).join("")}</select></td></tr>`).join("")||`<tr><td colspan="5" class="muted">Välj väg och målmöte och klicka <b>Planera baklänges</b>.</td></tr>`;
+  draft.steps.forEach((s,i)=>{$(`st-date-${i}`).onchange=e=>{s.date=e.target.value;const r=ruleDeadline(s.committee,s.date);if(r){s.deadline=r;$(`st-dl-${i}`).value=r}};$(`st-dl-${i}`).onchange=e=>s.deadline=e.target.value;$(`st-bk-${i}`).onchange=e=>s.booked=e.target.value;$(`st-st-${i}`).onchange=e=>s.status=e.target.value});
+}
+function renderOwner(){$("owner-name").textContent=draft.ownerId?(ownerName(draft.ownerId)||"Vald kollega"):"Ingen vald"}
+function openEditor(p){
+  editing=p?p.id:null;
+  draft=p?JSON.parse(JSON.stringify(p)):{title:"",kind:"Decision",gate:"G0",docUrl:"",ownerId:meId||"",path:[...ORDER],steps:[],notes:"",target:null};
+  if(p&&!draft.path)draft.path=(p.steps||[]).map(s=>s.committee);
+  const adhoc=(draft.steps||[]).find(s=>!ORDER.includes(s.committee));
+  $("p-heading").textContent=p?"Redigera papper":"Nytt papper";
+  $("p-title").value=draft.title;$("p-kind").value=draft.kind||"Decision";$("p-doc").value=draft.docUrl||"";$("p-notes").value=draft.notes||"";
+  $("p-gate").innerHTML=GATES.map(([k,v])=>`<option value="${k}" ${draft.gate===k?"selected":""}>${k} · ${v}</option>`).join("");
+  $("p-path").innerHTML=ORDER.map(c=>`<label><input type="checkbox" value="${c}" ${draft.path.includes(c)?"checked":""}> ${c}</label>`).join("");
+  $("p-adhoc").value=adhoc?adhoc.committee:"";
+  $("p-adhoc-before").innerHTML=ORDER.map(c=>`<option value="${c}">${c}</option>`).join("")+`<option value="">(sist)</option>`;
+  if(adhoc){const i=draft.steps.indexOf(adhoc);const nxt=draft.steps.slice(i+1).find(s=>ORDER.includes(s.committee));$("p-adhoc-before").value=nxt?nxt.committee:""}
+  $("p-path").querySelectorAll("input").forEach(cb=>cb.onchange=()=>{draft.path=[...$("p-path").querySelectorAll("input:checked")].map(x=>x.value);fillTargetOptions()});
+  $("p-adhoc").oninput=fillTargetOptions;$("p-adhoc-before").onchange=fillTargetOptions;
+  fillTargetOptions();renderSteps();renderOwner();
+  $("owner-wrap").hidden=!user;$("owner-q").value="";$("owner-results").hidden=true;
+  $("p-delete").hidden=!p;$("p-delete-confirm").hidden=true;$("p-plan-msg").textContent="";
+  $("scrim").hidden=false;$("p-title").focus();
+}
+function closeEditor(){$("scrim").hidden=true;editing=null;draft=null}
+$("p-plan").onclick=()=>{
+  const path=draftPath();const t=$("p-target").value;if(!path.length||!t){$("p-plan-msg").textContent="Välj väg och målmöte först.";return}
+  const ad=path.find(c=>!ORDER.includes(c));
+  if(ad&&!meetings(iso(TODAY),t).some(m=>m.committee===ad)){$("p-plan-msg").textContent=`Lägg in ${ad}s möte under Kalender → Undantag (typ Ad hoc) först.`;return}
+  const r=plan(path,t,Math.max(0,parseInt($("p-buffer").value||"3",10)));
+  if(r.steps){const old=draft.steps||[];draft.steps=r.steps.map(m=>{const o=old.find(x=>x.committee===m.committee&&x.date===m.date);return {committee:m.committee,date:m.date,deadline:m.deadline,booked:o?o.booked:"No",status:o?o.status:"Planned"}});draft.target={committee:path[path.length-1],date:t};renderSteps()}
+  $("p-plan-msg").textContent=r.error||`Planerat: första pre-read ${niceY(draft.steps[0].deadline)}.`;
+};
+$("owner-me").onclick=()=>{if(meId){draft.ownerId=meId;resolveProfiles([meId]).then(renderOwner)}};
+let ownerTimer;
+$("owner-q").oninput=$("owner-q").onfocus=()=>{clearTimeout(ownerTimer);ownerTimer=setTimeout(async()=>{if(!user||!user.search)return;let hits=[];try{hits=await user.search($("owner-q").value.trim())}catch(e){}
+  const box=$("owner-results");box.innerHTML="";hits.slice(0,8).forEach(h=>{const b=document.createElement("button");b.type="button";b.textContent=(h.name||"Någon")+(h.isMe?" (du)":"");b.onclick=()=>{draft.ownerId=h.id;profiles[h.id]=h;renderOwner();box.hidden=true;$("owner-q").value=""};box.appendChild(b)});box.hidden=!hits.length},200)};
+$("p-save").onclick=async()=>{
+  if(!db)return;draft.title=$("p-title").value.trim()||"Namnlöst papper";draft.kind=$("p-kind").value;draft.gate=$("p-gate").value;draft.docUrl=$("p-doc").value.trim();draft.notes=$("p-notes").value;
+  const data={title:draft.title,kind:draft.kind,gate:draft.gate,docUrl:draft.docUrl,ownerId:draft.ownerId||"",path:draft.path,steps:draft.steps,notes:draft.notes,target:draft.target||null,example:!!draft.example,updatedAt:new Date().toISOString()};
+  $("p-save").disabled=true;
+  try{if(editing)await db.collection("papers").doc(editing).set(data);else await db.collection("papers").add(data);toast("Sparat");closeEditor()}catch(e){toast(e&&e.code==="not_granted"?"Du har inte skrivbehörighet i översikten.":"Kunde inte spara: "+(e&&e.message||"okänt fel"))}
+  $("p-save").disabled=false;
+};
+$("p-delete").onclick=()=>{$("p-delete").hidden=true;$("p-delete-confirm").hidden=false};
+$("p-delete-confirm").onclick=async()=>{try{await db.collection("papers").doc(editing).delete();toast("Borttaget");closeEditor()}catch(e){toast("Kunde inte ta bort.")}};
+$("p-close").onclick=$("p-cancel").onclick=closeEditor;
+$("scrim").addEventListener("click",e=>{if(e.target===$("scrim"))closeEditor()});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!$("scrim").hidden)closeEditor()});
+
+/* ---------- overrides ---------- */
+$("add-ovl").onclick=()=>{$("ovl-form").hidden=false;$("o-date").focus()};
+$("o-cancel").onclick=()=>$("ovl-form").hidden=true;
+$("o-type").onchange=()=>$("o-orig-wrap").hidden=$("o-type").value!=="Moved";
+$("o-save").onclick=async()=>{
+  const o={type:$("o-type").value,committee:$("o-com").value.trim(),date:$("o-date").value,originalDate:$("o-orig").value||"",deadline:$("o-dl").value||"",comment:$("o-comment").value.trim()};
+  if(!o.committee||!o.date){toast("Ange kommitté och datum.");return}
+  if(!ORDER.includes(o.committee)&&!o.deadline&&o.type!=="Cancelled"){toast("Ad hoc-kommittéer behöver en pre-read-deadline.");return}
+  if(!o.deadline&&o.type!=="Cancelled")o.deadline=ruleDeadline(o.committee,o.date);
+  try{await db.collection("calendar").doc(`${o.committee}_${o.date}`.replace(/[^\w-]/g,"_")).set(o);$("ovl-form").hidden=true;["o-com","o-date","o-orig","o-dl","o-comment"].forEach(i=>$(i).value="");toast("Undantag sparat")}catch(e){toast("Kunde inte spara undantaget.")}
+};
+
+/* ---------- import / export ---------- */
+function loadSheetJS(){return new Promise((res,rej)=>{if(window.XLSX)return res(window.XLSX);const s=document.createElement("script");s.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";s.onload=()=>res(window.XLSX);s.onerror=()=>rej(new Error("Kunde inte ladda Excel-läsaren"));document.head.appendChild(s)})}
+function toIsoCell(v){if(v==null||v==="")return"";if(v instanceof Date)return iso(v);if(typeof v==="number"){const d=new Date(Math.round((v-25569)*864e5));return iso(new Date(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate()))}const s=String(v).trim();return /^\d{4}-\d{2}-\d{2}/.test(s)?s.slice(0,10):""}
+$("import-file").onchange=async e=>{
+  const f=e.target.files[0];e.target.value="";if(!f||!db)return;
+  try{
+    const X=await loadSheetJS();const wb=X.read(await f.arrayBuffer(),{type:"array",cellDates:true});
+    const rows=X.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:""});
+    const key=(r,...names)=>{for(const k of Object.keys(r))if(names.includes(k.trim().toLowerCase()))return r[k];return""};
+    const recs=rows.map(r=>({committee:String(key(r,"committee")).trim().replace(/^GAC$/,"GAAC"),date:toIsoCell(key(r,"meeting date","date")),deadline:toIsoCell(key(r,"pre-read deadline","deadline")),type:String(key(r,"type")||"Ordinary").trim(),booked:String(key(r,"booked")).trim(),item:String(key(r,"item")).trim(),status:String(key(r,"status")).trim(),comment:String(key(r,"comment")).trim()})).filter(r=>r.committee&&r.date);
+    if(!recs.length){toast("Hittade inga rader med Committee och Meeting date.");return}
+    const min=recs.reduce((a,r)=>r.date<a?r.date:a,"9999"),max=recs.reduce((a,r)=>r.date>a?r.date:a,"0000");
+    const rule=ruleMeetings(parse(min),parse(max));const ruleSet=new Set(rule.map(m=>m.committee+"|"+m.date));const sheetSet=new Set(recs.map(r=>r.committee+"|"+r.date));
+    const writes=[];
+    for(const r of recs){const isRule=ruleSet.has(r.committee+"|"+r.date);const rd=ORDER.includes(r.committee)?ruleDeadline(r.committee,r.date):null;
+      const t=["Moved","Extra","Ad hoc"].includes(r.type)?r.type:(!ORDER.includes(r.committee)?"Ad hoc":(!isRule?"Extra":null));
+      if(t||(r.deadline&&rd&&r.deadline!==rd))writes.push({type:t||"Extra",committee:r.committee,date:r.date,deadline:r.deadline||rd||r.date,originalDate:"",comment:r.comment||(t?"":"Avvikande deadline"),imported:true})}
+    for(const m of rule)if(!sheetSet.has(m.committee+"|"+m.date))writes.push({type:"Cancelled",committee:m.committee,date:m.date,deadline:"",originalDate:"",comment:"Saknas i importerad kalender",imported:true});
+    for(const w of writes){if(w.type==="Extra"&&ruleSet.has(w.committee+"|"+w.date))w.type="Moved"}
+    for(const w of writes)await db.collection("calendar").doc(`${w.committee}_${w.date}`.replace(/[^\w-]/g,"_")).set(w);
+    let matched=0;
+    for(const p of papers){let changed=false;const steps=(p.steps||[]).map(s=>{const r=recs.find(x=>x.item&&x.item.toLowerCase()===(p.title||"").toLowerCase()&&x.committee===s.committee&&x.date===s.date);if(r){changed=true;matched++;return {...s,booked:["Yes","No","Proposed"].includes(r.booked)?r.booked:s.booked,status:STATUSES.includes(r.status)?r.status:s.status}}return s});
+      if(changed)await db.collection("papers").doc(p.id).update({steps,updatedAt:new Date().toISOString()})}
+    toast(`Importerat ${recs.length} möten · ${writes.length} undantag · ${matched} bokningar matchade mot papper`);
+  }catch(err){toast("Importen misslyckades: "+(err&&err.message||"okänt fel"))}
+};
+$("export-csv").onclick=async()=>{
+  const ms=meetings(iso(TODAY),iso(addDays(TODAY,365)));const q=v=>`"${String(v??"").replace(/"/g,'""')}"`;
+  const lines=[["Committee","Meeting date","Pre-read deadline","Type","Booked","Item","Owner","Status","Comment"].join(",")];
+  for(const m of ms){const items=papers.flatMap(p=>(p.steps||[]).filter(s=>s.committee===m.committee&&s.date===m.date).map(s=>({p,s})));
+    if(!items.length)lines.push([m.committee,m.date,m.deadline,m.type,"No","","","",m.comment].map(q).join(","));
+    for(const {p,s} of items)lines.push([m.committee,m.date,m.deadline,m.type,s.booked||"No",p.title,ownerName(p.ownerId),s.status||"",m.comment].map(q).join(","))}
+  if(!downloads){toast("Nedladdning är inte tillgänglig här.");return}
+  try{await downloads.save({filename:`committee-calendar-${iso(TODAY)}.csv`,data:lines.join("\n")})}catch(e){if(e&&e.code!=="declined")toast("Kunde inte spara filen.")}
+};
+
+/* ---------- examples (clearly marked, created only on request) ---------- */
+$("load-examples").onclick=()=>loadExamples();
+async function loadExamples(){
+  if(!db)return;
+  const ov=[{type:"Moved",committee:"Board",date:"2027-06-10",originalDate:"2027-06-17",deadline:"2027-06-01",comment:"Flyttat från 17 juni"},
+            {type:"Extra",committee:"GAAC",date:"2027-03-04",originalDate:"",deadline:"2027-03-01",comment:"Extramöte – ICAAP"},
+            {type:"Ad hoc",committee:"Basel Steering Group",date:"2027-01-20",originalDate:"",deadline:"2027-01-15",comment:"CRR3-införande"}];
+  try{
+    for(const o of ov)await db.collection("calendar").doc(`${o.committee}_${o.date}`.replace(/[^\w-]/g,"_")).set({...o,example:true});
+    const mk=(title,kind,gate,path,target,booked,notes)=>{const r=plan(path,target,3);const steps=(r.steps||[]).map((m,i)=>({committee:m.committee,date:m.date,deadline:m.deadline,booked:booked[i]||"No",status:"Planned"}));return {title,kind,gate,docUrl:"",ownerId:meId||"",path,steps,notes,target:{committee:path[path.length-1],date:target},example:true,updatedAt:new Date().toISOString()}};
+    const firstBoard=meetings(iso(addDays(TODAY,90)),iso(addDays(TODAY,200))).find(m=>m.committee==="Board");
+    const firstGEC=meetings(iso(addDays(TODAY,30)),iso(addDays(TODAY,80))).find(m=>m.committee==="GEC");
+    const firstGAAC=meetings(iso(addDays(TODAY,9)),iso(addDays(TODAY,40))).find(m=>m.committee==="GAAC");
+    const ex=[];
+    if(firstBoard)ex.push(mk("Revised IRRBB limit framework","Decision","G3",[...ORDER],firstBoard.date,["Yes","Proposed","No","No","No"],"Öppen fråga: källa till besparingen på hedgingkostnad. Förankra med CRO före RCC."));
+    if(firstGEC)ex.push(mk("Annual funding plan 2027","Decision","G5",["GAAC","GEC"],firstGEC.date,["Yes","Yes"],"GEC vill se scenariot med stängd obligationsmarknad i 3 månader."));
+    if(firstGAAC){const p=mk("FX hedging programme 2027","Decision","G6",["TC","GAAC"],firstGAAC.date,["Yes","Yes"],"TC godkände med villkor: rapportera hedge-effektivitet kvartalsvis.");if(p.steps[0]){p.steps[0].status="Approved with conditions"}if(p.steps[1]){p.steps[1].status="Paper submitted"}ex.push(p)}
+    for(const p of ex)await db.collection("papers").add(p);
+    toast("Exempeldata laddad – märkt ”Exempel”.");
+  }catch(e){toast("Kunde inte ladda exempeldata.")}
+}
+$("clear-examples").onclick=async()=>{try{for(const p of papers.filter(p=>p.example))await db.collection("papers").doc(p.id).delete();for(const o of overrides.filter(o=>o.example))await db.collection("calendar").doc(o.id).delete();toast("Exempeldata borttagen")}catch(e){toast("Kunde inte ta bort exempeldata.")}};
+
+/* ---------- misc UI ---------- */
+let toastTimer;function toast(t){const el=$("toast");el.textContent=t;el.hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.hidden=true,4200)}
+function setTab(cal){$("tab-pipe").setAttribute("aria-selected",String(!cal));$("tab-cal").setAttribute("aria-selected",String(cal));$("view-pipe").hidden=cal;$("view-cal").hidden=!cal;try{localStorage.setItem("pipeline-tab",cal?"cal":"pipe")}catch(e){}}
+$("tab-pipe").onclick=()=>setTab(false);$("tab-cal").onclick=()=>setTab(true);
+try{if(localStorage.getItem("pipeline-tab")==="cal")setTab(true)}catch(e){}
+$("new-paper").onclick=()=>openEditor(null);
+$("papers").addEventListener("click",e=>{const b=e.target.closest("[data-edit]");if(b){const p=papers.find(x=>x.id===b.dataset.edit);if(p)openEditor(p)}const a=e.target.closest("[data-act]");if(a){if(a.dataset.act==="new")openEditor(null);if(a.dataset.act==="examples")loadExamples()}});
+$("ovl-list").addEventListener("click",async e=>{const b=e.target.closest("[data-del-ovl]");if(b){try{await db.collection("calendar").doc(b.dataset.delOvl).delete();toast("Undantag borttaget")}catch(err){toast("Kunde inte ta bort.")}}});
+$("today").textContent="I dag "+niceY(iso(TODAY));
+$("o-orig-wrap").hidden=false;
+
+/* ---------- boot ---------- */
+renderAll();
+$("papers").innerHTML=`<div class="empty"><p class="muted">Läser teamets papper …</p></div>`;
+(async()=>{
+  if(!window.claude||!window.claude.use){$("db-notice").hidden=false;$("db-notice").textContent="Öppna sidan i Claude för att se och dela teamets papper. Kalendern nedan räknas fram från standardrytmen.";$("papers").innerHTML="";renderAll();return}
+  const [d,u,dl]=await Promise.all([claude.use("db"),claude.use("user"),claude.use("downloads")]);
+  db=d;user=u;downloads=dl;
+  if(user){try{meId=await user.id()}catch(e){}try{const c=await user.can("data.write");canWrite=c!==false}catch(e){}}
+  if(!db){$("db-notice").hidden=false;$("db-notice").textContent="Logga in i Claude för att se och redigera teamets papper. Kalendern räknas fram från standardrytmen.";$("papers").innerHTML="";renderAll();return}
+  if(!canWrite){$("db-notice").hidden=false;$("db-notice").textContent="Du kan se översikten men inte ändra den. Be ägaren om redigeringsbehörighet."}
+  let gotP=false;const timer=setTimeout(()=>{if(!gotP){$("db-notice").hidden=false;$("db-notice").classList.add("bad");$("db-notice").textContent="Teamets papper svarar inte just nu. Ladda om sidan om en stund."}},10000);
+  db.collection("papers").onSnapshot(async s=>{gotP=true;clearTimeout(timer);papers=s.docs.map(x=>({id:x.id,...x.data()}));await resolveProfiles([...new Set(papers.map(p=>p.ownerId).filter(Boolean))]);renderAll()},err=>{clearTimeout(timer);$("db-notice").hidden=false;$("db-notice").classList.add("bad");$("db-notice").textContent="Kunde inte läsa teamets papper ("+(err&&err.code||"fel")+")."});
+  db.collection("calendar").onSnapshot(s=>{overrides=s.docs.map(x=>({id:x.id,...x.data()}));renderAll()},()=>{});
+})();
+</script>

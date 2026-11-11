@@ -21,6 +21,9 @@ Organisationen har ett ark med alla kommittémöten. Förväntade kolumner (namn
 - Finns inget ark: be om mötesdatumen för de aktuella kommittéerna och använd fallback-deadlines från `kommitteer.md`.
 - Ändra aldrig i användarens original utan att fråga. Leverera i stället en **uppdaterad kopia** (samma kolumner) med föreslagna ändringar markerade, t.ex. `Booked = Proposed`, och sammanfatta ändringarna i chatten.
 
+## Teamets översikt
+Teamet kan ha en delad översikt (artifacten *Kommittéflödet*) med alla papper, vägar, deadlines och bokningar. Påminn användaren om att uppdatera den när ett möte bokas eller ett utfall kommer – eller fyll i värdena åt dem att klistra in.
+
 ## 1. Bestäm vägen
 Utgå från ärendets mandatbehov och `kommitteer.md` (typisk väg TC → GAAC → GEC → RCC → Board). Bekräfta med användaren – många ärenden ska inte hela vägen.
 
