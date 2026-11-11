@@ -1,18 +1,31 @@
 # Committee register
 
-> **FICTIONAL DATA** for the proof of concept. Mandates and thresholds are invented. Replace with the real register for live use. Meeting dates and pre-read deadlines live in the **committee calendar (Excel)** – see `forankring.md`.
+> Meeting rhythm and deadlines are real; **mandates, members and thresholds are FICTIONAL** for the proof of concept.
+
+## Order and rhythm
+The path is always in this order (not every item goes all the way):
+```
+TC → GAC → GEC → RCC → Board
+```
+
+| Committee | Meets | Pre-read deadline |
+|---|---|---|
+| **TC** – Treasury Committee | Every **Thursday** | **Monday** the same week (3 days before) |
+| **GAC** – CFO committee | Every **Tuesday** | **Thursday** the week before (5 days before) |
+| **GEC** – Group Executive Committee | Every **Monday** | **Friday** the week before (3 days before) |
+| **RCC** – Board Risk and Compliance Committee | **Wednesday in the 3rd week** of each month | **9 days** before |
+| **Board** | **3rd Thursday** of each month | **9 days** before |
+
+Rules of thumb:
+- "9 days" = calendar days. If the deadline falls on a weekend or public holiday, it moves to the previous business day.
+- A meeting that falls on a public holiday is assumed cancelled unless the calendar says otherwise.
+- **The committee calendar always wins** over these rules: meetings get moved, extra meetings are added, and **ad hoc committees** (e.g. a steering group or a model committee) can appear. Treat an ad hoc committee as an extra step in the path where the user places it; ask for its deadline if it is not in the calendar.
+- **RCC and Board often fall in the same week** (Wednesday/Thursday). The Board's deadline then comes *before* RCC meets, so an item that needs RCC first usually goes to RCC the month before the Board. Point this out when planning.
 
 ## Common format (all committees)
-- **One template** for all committees (see `mallar.md`): **Executive summary** (max 1 page) + **main paper max 5 pages** + appendices.
+- **One template** (see `mallar.md`): **Executive summary · Resolution · The matter at hand (max 5 pages)** · optional appendix.
 - **Language**: English by default. Swedish only if the user says so.
-- **Pre-read**: submitted to the committee secretary by the deadline in the calendar. Fallback if the calendar has no deadline: 7 business days before (Board/RCC: 10 business days).
-- **Booking**: an item must be booked on the agenda with the secretary; status is tracked in the calendar (column `Booked`).
-
-## Typical path
-```
-Treasury Committee (TC) → GAC (CFO) → GEC (CEO) → RCC (Board) → Board
-```
-Not every item goes all the way – it depends on the mandate (below). Ask the user to confirm the path.
+- **Booking**: the item must be booked on the agenda with the secretary; status is tracked in the calendar (column `Booked`).
 
 ---
 
@@ -20,7 +33,7 @@ Not every item goes all the way – it depends on the mandate (below). Ask the u
 - **Chair**: Group Treasurer
 - **Members (roles)**: Head of ALM, Head of Funding, Head of Market Risk (2nd line), Group Financial Controller
 - **Mandate (summary)**: Liquidity and funding, interest rate risk in the banking book, FX hedging, investment portfolio. Decides within limits set by GAC; prepares limit changes and funding strategy for GAC.
-- **Audience profile**: Expert – technical depth is fine, but the main paper must still lead with the decision.
+- **Audience profile**: Expert – technical depth is fine, but the paper must still lead with the resolution.
 - **Usually asks about**: assumptions, scenarios, limit utilisation, market conditions, hedge effectiveness.
 
 ## GAC – CFO committee

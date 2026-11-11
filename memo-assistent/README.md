@@ -25,39 +25,52 @@ En Claude-native **memocoach med ett agentteam** som hjälper ett team att **pla
 
 ## Innehåll
 ```
-memo-assistent/                      ← plugin "memo-studio"
+memo-assistent/                      ← plugin "memo-studio" (källan till allt)
 ├── .claude-plugin/plugin.json
-├── skills/memo-assistent/           ← coach-skillen
-│   ├── SKILL.md
-│   └── references/                  coachning, kommittéer, mallar, granskning, förankring, Q&A, team, språkregler
-├── agents/                          ← 9 specialistagenter
-├── commands/                        ← /memo-new  /memo-review  /memo-plan  /memo-qa
-├── exempel/                         ← committee-calendar.xlsx, draft-irrbb-limit-framework.md
-├── build.sh                         ← bygger memo-assistent.skill för claude.ai-chatten
-└── memo-assistent.skill
-../.claude-plugin/marketplace.json   ← gör repot till en plugin-marknadsplats för teamet
+├── skills/memo-assistent/
+│   ├── SKILL.md                     coach-hållning, lägen, agentteam, Claude Docs
+│   ├── references/                  coachning, kommittéer (rytm + deadlines), mall, granskning,
+│   │                                förankring, Q&A, team, språkregler
+│   └── scripts/                     committee_rules.py + plan_path.py (vägen och deadlines)
+├── agents/                          9 specialistagenter
+├── commands/                        /memo-new  /memo-review  /memo-plan  /memo-qa
+├── exempel/                         kalender (xlsx + csv, fiktiv), make_calendar.py, testutkast
+├── build.sh                         bygger memo-assistent.skill och projekt/
+├── memo-assistent.skill             skill-paket för claude.ai
+└── projekt/                         instruktioner + kunskapsfiler för ett delat Claude-projekt
 ```
 
-## Installera
-**Claude Code / Cowork (pluginet med agenter och kommandon):**
-```
-/plugin install memo-studio --marketplace KarmaDonkey/Ledger
-```
+## Kom igång i team: ett delat Claude-projekt (rekommenderas)
+1. claude.ai → **Projects → New project**, döp det till **Memo Studio**.
+2. Klistra in `projekt/instruktioner.md` som projektets instruktioner.
+3. Ladda upp allt i `projekt/kunskap/` som projektkunskap.
+4. **Dela projektet** med teamet (Team/Enterprise). Alla får då samma coach, mallar och kommittéregler.
+5. Slå på **Claude Docs**. Varje papper blir ett delat doc med flikarna Paper, Brief, Q&A, Plan och Log. Kollegor kommenterar och kallar på Claude i trådarna (`review as Board`, `shorten`, `source?` …).
+6. Ladda upp den aktuella kommittékalendern i chatten när du planerar. Kopian i projektet blir inaktuell.
 
-**claude.ai-chatten (bara skillen):** ladda upp `memo-assistent.skill` under inställningarna för Skills. Slå på Claude Docs.
+Övriga vägar:
+- **Personlig skill:** ladda upp `memo-assistent.skill` i Skills-inställningarna.
+- **Claude Code / Cowork med riktiga subagenter:** `/plugin install memo-studio --marketplace KarmaDonkey/Ledger` (efter merge till huvudbranchen).
 
-## Dela med teamet
-1. **Samma verktyg för alla:** teamet installerar pluginet från marknadsplatsen, eller så lägger en admin ut skillen för hela organisationen.
-2. **Delat projekt ”Memo Studio”:** kommittéregister, kalender och ett bibliotek med godkända papper som kunskap.
-3. **Ett papper = ett delat Claude Doc** med flikarna Paper, Brief, Q&A, Plan och Log. Kollegor kommenterar och kan kalla på Claude i tråden med kortkommandon som `review as Board`, `shorten`, `source?` och `to appendix?`. Se `skills/memo-assistent/references/team.md`.
+## Kommittérytmen
+| Kommitté | Möte | Pre-read-deadline |
+|---|---|---|
+| TC | torsdagar | måndag samma vecka |
+| GAC | tisdagar | torsdag veckan innan |
+| GEC | måndagar | fredag veckan innan |
+| RCC | onsdag vecka 3 varje månad | 9 dagar innan |
+| Board | 3:e torsdagen varje månad | 9 dagar innan |
+
+Kalendern går alltid före reglerna, eftersom möten kan flyttas och extra- eller ad hoc-möten tillkomma.
+`python3 skills/memo-assistent/scripts/plan_path.py --target Board --date 2027-04-15 --calendar exempel/committee-calendar.xlsx`
 
 ## Prova
 | Kommando | Exempel |
 |---|---|
 | `/memo-new` | `/memo-new nya IRRBB-limiter, hela vägen till styrelsen` |
 | `/memo-review` | `/memo-review exempel/draft-irrbb-limit-framework.md GAC` |
-| `/memo-plan` | `/memo-plan Board 21 April exempel/committee-calendar.xlsx` |
+| `/memo-plan` | `/memo-plan Board 15 April exempel/committee-calendar.xlsx` |
 | `/memo-qa` | `/memo-qa RCC tough` |
 
 ## Byta till riktiga data
-Byt ut `references/kommitteer.md` och kalendern mot era egna. Kör `./build.sh` för att bygga om chattpaketet.
+Byt ut mandaten i `references/kommitteer.md` och kalendern mot era egna. Kör `./build.sh` för att bygga om `memo-assistent.skill` och `projekt/`.

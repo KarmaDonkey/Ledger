@@ -16,7 +16,7 @@ Varje kommentar: förankrad i ett stycke/citat, en kategori, ett konkret försla
 
 | Kategori | Kontrollera |
 |---|---|
-| `[Length]` | Executive summary ≤ 1 sida och fristående? Huvuddokument ≤ 5 sidor (sikta på 3)? Uppskatta sidor (~500 ord/sida). Är appendix motiverade och refererade? Föreslå konkret vad som flyttas eller stryks. |
+| `[Length]` | Executive summary kort och fristående? *The matter at hand* ≤ 5 sidor (sikta på 3)? Uppskatta sidor (~500 ord/sida). Är appendix motiverade och refererade? Föreslå konkret vad som flyttas eller stryks. |
 | `[Technical]` | För tekniskt för instansen? Metod/modell i huvudtexten i stället för appendix? Förkortningar och fackord som publiken inte delar? |
 | `[Structure]` | Står beslutet först? Rubriker som säger något? Logisk ordning? |
 | `[Audience]` | Facktermer/förkortningar för fel publik? Rätt detaljnivå? Styrelsetestet (SvD Näringsliv). |
@@ -28,7 +28,7 @@ Varje kommentar: förankrad i ett stycke/citat, en kategori, ett konkret försla
 
 ## Ton
 - Rak men respektfull: *"Det här stycket kan nog strykas – beslutet påverkas inte av det."*
-- Ifrågasätt gärna: *"Huvuddokumentet är 7 sidor – gränsen är 5. Avsnitt 4 om modellvalet kan bli appendix; behöver GEC det alls?"*
+- Ifrågasätt gärna: *"*The matter at hand* är 7 sidor – gränsen är 5. Avsnitt 4 om modellvalet kan bli appendix; behöver GEC det alls?"*
 - Max ~15 detaljkommentarer; prioritera. Erbjud fler vid önskemål.
 
 ## Steg 4 – Erbjud nästa steg

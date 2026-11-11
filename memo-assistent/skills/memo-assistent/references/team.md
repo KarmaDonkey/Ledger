@@ -3,14 +3,14 @@
 Flera personer arbetar i samma papper. Claude är en medarbetare i dokumentet. Dokumentet – inte chatthistoriken – är sanningen, så att vem som helst i teamet kan ta över.
 
 ## Roller (människor)
-| Roll | Gör | Godkänner grindar |
+| Roll | Gör | Bekräftar (rekommendation) |
 |---|---|---|
 | **Owner** | Äger ärendet och dragningen | G1 Syfte, G4 Struktur, G6 Redo att skicka |
 | **Co-author** | Skriver avsnitt, tar fram underlag | – |
 | **Reviewer** | Kommenterar (t.ex. kollega, 2nd line, chef) | – |
 | **Approver** | Närmaste chef eller sponsor | Släpper pappret till första kommittén |
 
-Endast människor passerar grindar. Claude föreslår, människor beslutar. Skriv i `Brief` vem som godkände och när: `✅ G4 – godkänd av <namn> 2027-01-14`.
+Grindarna är statusmarkeringar: Claude noterar vad som saknas men stoppar aldrig arbetet. När en människa bekräftar ett steg, skriv det i `Brief`: `✅ G4 – bekräftad av <namn> 2027-01-14`. Obekräftade steg markeras `◐`.
 
 ## Dokumentets uppbyggnad (alla papper)
 - **Paper** – själva pappret.

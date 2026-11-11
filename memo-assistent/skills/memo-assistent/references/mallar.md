@@ -21,57 +21,49 @@ Assumptions:       <things assumed but not confirmed>
 Open questions:    <numbered, with owner>
 ```
 
-## Committee paper (English) – standard
+## Committee paper – the template (all committees)
 ```
 # <Heading that states the proposal>
 To: <committee>   From: <name, function>   Date: <date>
 Item type: Decision | Information | Discussion   Previously reviewed by: <bodies + outcome>
 
-## Executive summary  (max 1 page – must stand alone)
-**Proposed resolution:** The Committee is asked to resolve that …
-- Why: <2–3 bullets>
-- Impact: <customers, capital/P&L, risk – with numbers>
-- Main risk and mitigation: <1 bullet>
-- If not approved: <1 bullet>
+## Executive summary
+<Standalone, ideally ½ page. What is proposed, why now, impact (customers,
+financials, capital/liquidity, risk) with numbers, main risk, what if not approved.>
 
-## 1. Background and why now          (≤ ½ page)
-## 2. Proposal                        
-## 3. Impact – customers, financials, capital/liquidity, risk
-## 4. Options considered              (incl. do nothing)
-## 5. Risks and mitigation
-## 6. Implementation, ownership and follow-up
-## 7. Consultation                    (who has reviewed, their views)
+## Resolution
+The Committee is asked to resolve that …
+<Minutable wording. For information items: "The Committee is asked to note …" –
+but check whether it really should be a decision.>
 
-Appendices: <only what answers a question a member is likely to ask; each appendix referenced from the main paper>
+## The matter at hand            (max 5 pages – aim for 3)
+<Suggested sub-structure – use what the item needs, in this order:>
+- Background and why now
+- Proposal
+- Impact – customers, financials, capital/liquidity, risk
+- Options considered (incl. do nothing)
+- Risks and mitigation
+- Implementation, ownership and follow-up
+- Consultation (who has reviewed, their views)
+
+## Appendix (optional)
+<Only what answers a question a member is likely to ask; each appendix
+referenced from The matter at hand.>
 ```
-**Length:** executive summary max 1 page, main paper (sections 1–7) **max 5 pages**. Aim for less.
+Writing order: Resolution → The matter at hand → Executive summary (last, when the content is settled).
 
 ## Board / RCC adaptation
-- Add one line at the top of the executive summary: **"Why this matters to the Board"**.
+- Open the Executive summary with one line: **"Why this matters to the Board"**.
 - Link explicitly to strategy and risk appetite.
-- Replace technical terms with plain language; move methodology to appendix.
-- State the outcome at each prior committee.
+- Plain language; methodology to appendix.
+- State the outcome at each prior committee under "Previously reviewed by".
 
-## Information paper (shorter variant)
-```
-# <Heading with the message>
-## Executive summary (3–5 sentences)
-## What has happened
-## What it means for us and our customers
-## Next steps / what we will come back with
-```
-
-## Svensk version av standardmallen
+## Svensk version
 ```
 # <Rubrik som anger förslaget>
-## Sammanfattning (max 1 sida)
-**Förslag till beslut:** <Kommittén> föreslås besluta att …
-## 1. Bakgrund och varför nu
-## 2. Förslag
-## 3. Effekter – kunder, ekonomi, kapital/likviditet, risk
-## 4. Alternativ som övervägts
-## 5. Risker och hantering
-## 6. Genomförande, ägarskap och uppföljning
-## 7. Förankring
-Bilagor
+## Sammanfattning
+## Förslag till beslut
+<Kommittén> föreslås besluta att …
+## Ärendet  (max 5 sidor)
+## Bilagor (frivilligt)
 ```
