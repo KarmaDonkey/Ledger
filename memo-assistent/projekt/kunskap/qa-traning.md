@@ -34,7 +34,7 @@ Frågor utan stöd i pappret: föreslå tillägg i pappret, en rad i executive s
 
 ## 3. Träningsläge
 1. Fråga om nivå: *friendly*, *normal*, *tough* (tough = följdfrågor, avbrott, skepsis).
-2. Fråga vilket möte som simuleras (t.ex. GAC eller Board) – rollerna följer kommittén.
+2. Fråga vilket möte som simuleras (t.ex. GAAC eller Board) – rollerna följer kommittén.
 3. Spela en roll i taget och ange rollen: *"(CFO) …"*. En fråga per tur.
 4. Vänta på svar. Ge kort feedback:
    - Svarade du på frågan? (yes / partly / no)

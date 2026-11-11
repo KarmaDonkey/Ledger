@@ -5,13 +5,13 @@
 ## Order and rhythm
 The path is always in this order (not every item goes all the way):
 ```
-TC → GAC → GEC → RCC → Board
+TC → GAAC → GEC → RCC → Board
 ```
 
 | Committee | Meets | Pre-read deadline |
 |---|---|---|
 | **TC** – Treasury Committee | Every **Thursday** | **Monday** the same week (3 days before) |
-| **GAC** – CFO committee | Every **Tuesday** | **Thursday** the week before (5 days before) |
+| **GAAC** – Group Asset Allocation Committee | Every **Tuesday** | **Thursday** the week before (5 days before) |
 | **GEC** – Group Executive Committee | Every **Monday** | **Friday** the week before (3 days before) |
 | **RCC** – Board Risk and Compliance Committee | **Wednesday in the 3rd week** of each month | **9 days** before |
 | **Board** | **3rd Thursday** of each month | **9 days** before |
@@ -32,21 +32,21 @@ Rules of thumb:
 ## TC – Treasury Committee
 - **Chair**: Group Treasurer
 - **Members (roles)**: Head of ALM, Head of Funding, Head of Market Risk (2nd line), Group Financial Controller
-- **Mandate (summary)**: Liquidity and funding, interest rate risk in the banking book, FX hedging, investment portfolio. Decides within limits set by GAC; prepares limit changes and funding strategy for GAC.
+- **Mandate (summary)**: Liquidity and funding, interest rate risk in the banking book, FX hedging, investment portfolio. Decides within limits set by GAAC; prepares limit changes and funding strategy for GAAC.
 - **Audience profile**: Expert – technical depth is fine, but the paper must still lead with the resolution.
 - **Usually asks about**: assumptions, scenarios, limit utilisation, market conditions, hedge effectiveness.
 
-## GAC – CFO committee
+## GAAC – Group Asset Allocation Committee
 - **Chair**: CFO
 - **Members (roles)**: Group Treasurer, CRO, Head of Group Finance, Head of Capital Management, Head of Tax
-- **Mandate (summary)**: Capital and liquidity planning, ALM framework, accounting policies, financial targets, limits within Board-approved risk appetite. Prepares items for GEC and RCC.
+- **Mandate (summary)**: Allocation of capital, balance sheet and liquidity across business areas and asset classes; investment and asset allocation strategy; ALM framework; capital and funding planning; limits within Board-approved risk appetite. Prepares items for GEC and RCC.
 - **Audience profile**: Expert/Management
-- **Usually asks about**: capital and P&L impact, consistency with financial plan, risk appetite, rating impact, accounting treatment.
+- **Usually asks about**: return on allocated capital, capital and P&L impact, consistency with financial plan and risk appetite, rating impact, opportunity cost versus other uses of capital.
 
 ## GEC – Group Executive Committee
 - **Chair**: CEO
 - **Members (roles)**: CFO, CRO, COO, CIO, Chief Compliance Officer, Head of HR, business area heads
-- **Mandate (summary)**: CEO's decision forum. Strategy execution, investments above GAC's mandate, organisational changes, items that go to the Board.
+- **Mandate (summary)**: CEO's decision forum. Strategy execution, investments above GAAC's mandate, organisational changes, items that go to the Board.
 - **Audience profile**: Management
 - **Usually asks about**: business and customer impact, cost and benefit, priority against other initiatives, execution risk, reputation, who owns it.
 

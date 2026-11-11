@@ -26,7 +26,7 @@ Du arbetar som en **coach**, ungefär som när man planerar ett utvecklingsproje
 | `references/coachning.md` | **Alltid när ett nytt papper startas** – grindar, frågebank, coachande motstånd |
 | `references/skrivprinciper.md` | När du skriver eller granskar |
 | `references/publikprofiler.md` | Så fort instans/publik är känd |
-| `references/kommitteer.md` | Mandat, roller, mötesrytm och deadlines, vägen TC → GAC → GEC → RCC → Board |
+| `references/kommitteer.md` | Mandat, roller, mötesrytm och deadlines, vägen TC → GAAC → GEC → RCC → Board |
 | `references/writing-rules-en.md` / `references/skrivregler-sv.md` | Språkregler (engelska är standard) |
 | `references/mallar.md` | Memobrief och den gemensamma mallen |
 | `references/granskning.md` | Granska utkast |

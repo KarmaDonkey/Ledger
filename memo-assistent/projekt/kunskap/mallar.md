@@ -1,6 +1,6 @@
 # Templates
 
-All committees (TC, GAC, GEC, RCC, Board) use the **same template**. English by default; a Swedish version is at the end.
+All committees (TC, GAAC, GEC, RCC, Board) use the **same template**. English by default; a Swedish version is at the end.
 
 ## Memo brief (output of the interview)
 ```
@@ -8,7 +8,7 @@ MEMO BRIEF
 Item:              <short title>
 Core message:      <one sentence: what should be decided/understood>
 Type:              Decision | Information | Discussion/Guidance
-Path:              <e.g. TC (date) → GAC (date) → GEC (date) → RCC (date) → Board (date)>
+Path:              <e.g. TC (date) → GAAC (date) → GEC (date) → RCC (date) → Board (date)>
 Audience per step: <Expert / Management / Board>
 Booked:            <per step: yes/no, from the committee calendar>
 Language:          English | Swedish

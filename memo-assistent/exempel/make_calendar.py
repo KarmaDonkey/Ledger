@@ -11,17 +11,17 @@ from openpyxl.worksheet.datavalidation import DataValidation
 
 D = dt.date
 rows = ordinary_meetings(D(2026, 12, 1), D(2027, 12, 31))
-# A moved Board meeting, an extra GAC and an ad hoc committee
+# A moved Board meeting, an extra GAAC and an ad hoc committee
 for r in rows:
     if r["committee"] == "Board" and r["date"] == D(2027, 6, 17):
         r.update(date=D(2027, 6, 10), deadline=deadline("Board", D(2027, 6, 10)), type="Moved", comment="Moved from 17 June")
-rows.append({"committee": "GAC", "date": D(2027, 3, 4), "deadline": D(2027, 3, 1), "type": "Extra", "comment": "Extra meeting – ICAAP"})
+rows.append({"committee": "GAAC", "date": D(2027, 3, 4), "deadline": D(2027, 3, 1), "type": "Extra", "comment": "Extra meeting – ICAAP"})
 rows.append({"committee": "Basel Steering Group", "date": D(2027, 1, 20), "deadline": D(2027, 1, 15), "type": "Ad hoc", "comment": "Ad hoc – CRR3 implementation"})
 booked = {
     ("TC", D(2026, 12, 3)): ("FX hedging programme 2027", "A. Example", "Approved with conditions", "Report hedge effectiveness quarterly"),
-    ("GAC", D(2026, 12, 15)): ("FX hedging programme 2027", "A. Example", "Paper submitted", ""),
+    ("GAAC", D(2026, 12, 15)): ("FX hedging programme 2027", "A. Example", "Paper submitted", ""),
     ("TC", D(2027, 2, 11)): ("Revised IRRBB limit framework", "A. Example", "Planned", ""),
-    ("GAC", D(2027, 2, 23)): ("Revised IRRBB limit framework", "A. Example", "Planned", "Pre-alignment with CFO pending"),
+    ("GAAC", D(2027, 2, 23)): ("Revised IRRBB limit framework", "A. Example", "Planned", "Pre-alignment with CFO pending"),
     ("Board", D(2027, 2, 18)): ("Annual funding plan 2027", "B. Sample", "Planned", ""),
 }
 rows.sort(key=lambda r: (r["date"], ORDER.index(r["committee"]) if r["committee"] in ORDER else 99))
@@ -44,7 +44,7 @@ for col, opts in (("D", "Ordinary,Moved,Extra,Ad hoc"), ("E", "Yes,No,Proposed")
 for col, w in zip("ABCDEFGHI", [22, 14, 17, 10, 9, 32, 12, 24, 40]): ws.column_dimensions[col].width = w
 ws.freeze_panes = "A2"; ws.auto_filter.ref = ws.dimensions
 info = wb.create_sheet("About")
-for line in ["FICTIONAL sample data. Rhythm: TC Thu (deadline Mon), GAC Tue (deadline Thu week before),",
+for line in ["FICTIONAL sample data. Rhythm: TC Thu (deadline Mon), GAAC Tue (deadline Thu week before),",
              "GEC Mon (deadline Fri week before), RCC Wed 3rd week (deadline 9 days before), Board 3rd Thu (deadline 9 days before).",
              "Meetings on Swedish public holidays are dropped. Type: Ordinary / Moved / Extra / Ad hoc."]:
     info.append([line])

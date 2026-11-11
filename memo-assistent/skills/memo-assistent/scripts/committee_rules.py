@@ -1,10 +1,10 @@
 """Meeting rhythm, pre-read deadlines and Swedish public holidays for the committee path.
 
-Order: TC -> GAC -> GEC -> RCC -> Board. The committee calendar always overrides these rules.
+Order: TC -> GAAC -> GEC -> RCC -> Board. The committee calendar always overrides these rules.
 """
 import datetime as dt
 
-ORDER = ["TC", "GAC", "GEC", "RCC", "Board"]
+ORDER = ["TC", "GAAC", "GEC", "RCC", "Board"]
 
 
 def easter(year):
@@ -64,9 +64,9 @@ def nth_weekday(year, month, weekday, n):
 
 
 def deadline(committee, meeting):
-    """Pre-read deadline by rule: TC Monday same week, GAC Thursday week before,
+    """Pre-read deadline by rule: TC Monday same week, GAAC Thursday week before,
     GEC Friday week before, RCC and Board 9 calendar days before. Moved to the previous business day."""
-    offset = {"TC": 3, "GAC": 5, "GEC": 3, "RCC": 9, "Board": 9}[committee]
+    offset = {"TC": 3, "GAAC": 5, "GEC": 3, "RCC": 9, "Board": 9}[committee]
     return prev_business_day(meeting - dt.timedelta(offset))
 
 
@@ -77,7 +77,7 @@ def ordinary_meetings(start, end):
     while d <= end:
         wd = d.weekday()
         if wd == 3: out.append(("TC", d))
-        if wd == 1: out.append(("GAC", d))
+        if wd == 1: out.append(("GAAC", d))
         if wd == 0: out.append(("GEC", d))
         d += dt.timedelta(1)
     y, m = start.year, start.month

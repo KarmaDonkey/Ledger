@@ -1,6 +1,6 @@
 # Paper regarding the IRRBB framework – review of EVE/NII limit calibration and associated governance aspects
 
-**To:** GAC (for onward submission to GEC, RCC and the Board)
+**To:** GAAC (for onward submission to GEC, RCC and the Board)
 **From:** Group Treasury, ALM
 **Date:** 2027-01-25
 
@@ -32,7 +32,7 @@ Higher limits mean that the Group can carry more interest rate risk. Model risk 
 
 ## 6. Proposal
 
-In view of the above, GAC is asked to note the analysis and to support that the proposal is submitted to GEC, RCC and the Board for approval.
+In view of the above, GAAC is asked to note the analysis and to support that the proposal is submitted to GEC, RCC and the Board for approval.
 
 ## Appendix A – Methodology
 ## Appendix B – Scenario results (six EBA shocks + internal scenarios)

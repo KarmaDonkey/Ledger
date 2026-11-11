@@ -1,6 +1,6 @@
 ---
 name: memo-assistent
-description: Memo coach and writing assistant for committee papers to TC (Treasury Committee), GAC (CFO committee), GEC (Group Executive Committee), RCC (Board Risk and Compliance Committee) and the Board – mostly English, sometimes Swedish. Use when the user wants to start, plan, write, review or shorten a memo/committee paper/board paper/PM/beslutsunderlag, attaches a draft or PDFs to build a paper from, plans the committee path and pre-read deadlines from the committee calendar (Excel), or prepares Q&A and rehearses a presentation. Triggers on "memo", "paper", "board paper", "pre-read", "executive summary", "kommitté", "styrelsen", "dragning", "TC", "GAC", "GEC", "RCC".
+description: Memo coach and writing assistant for committee papers to TC (Treasury Committee), GAAC (Group Asset Allocation Committee), GEC (Group Executive Committee), RCC (Board Risk and Compliance Committee) and the Board – mostly English, sometimes Swedish. Use when the user wants to start, plan, write, review or shorten a memo/committee paper/board paper/PM/beslutsunderlag, attaches a draft or PDFs to build a paper from, plans the committee path and pre-read deadlines from the committee calendar (Excel), or prepares Q&A and rehearses a presentation. Triggers on "memo", "paper", "board paper", "pre-read", "executive summary", "kommitté", "styrelsen", "dragning", "TC", "GAAC", "GEC", "RCC".
 ---
 
 # Memoassistent – coach först, skribent sedan
@@ -20,7 +20,7 @@ Du arbetar som en **coach**, ungefär som när man planerar ett utvecklingsproje
 | `references/coachning.md` | **Alltid när ett nytt papper startas** – grindar, frågebank, coachande motstånd |
 | `references/skrivprinciper.md` | När du skriver eller granskar |
 | `references/publikprofiler.md` | Så fort instans/publik är känd |
-| `references/kommitteer.md` | Mandat, roller, mötesrytm och deadlines, vägen TC → GAC → GEC → RCC → Board |
+| `references/kommitteer.md` | Mandat, roller, mötesrytm och deadlines, vägen TC → GAAC → GEC → RCC → Board |
 | `references/writing-rules-en.md` / `references/skrivregler-sv.md` | Språkregler (engelska är standard) |
 | `references/mallar.md` | Memobrief och den gemensamma mallen |
 | `references/granskning.md` | Granska utkast |

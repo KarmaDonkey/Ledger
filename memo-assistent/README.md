@@ -1,6 +1,6 @@
 # Memo Studio – proof of concept
 
-En Claude-native **memocoach med ett agentteam** som hjälper ett team att **planera, skriva, granska, förankra och förbereda** committee papers genom vägen TC → GAC → GEC → RCC → Board, och att samarbeta kring papperen i **Claude Docs**.
+En Claude-native **memocoach med ett agentteam** som hjälper ett team att **planera, skriva, granska, förankra och förbereda** committee papers genom vägen TC → GAAC → GEC → RCC → Board, och att samarbeta kring papperen i **Claude Docs**.
 
 > All data här (kommittémandat, kalender, testutkast) är **påhittad**.
 
@@ -56,7 +56,7 @@ memo-assistent/                      ← plugin "memo-studio" (källan till allt
 | Kommitté | Möte | Pre-read-deadline |
 |---|---|---|
 | TC | torsdagar | måndag samma vecka |
-| GAC | tisdagar | torsdag veckan innan |
+| GAAC | tisdagar | torsdag veckan innan |
 | GEC | måndagar | fredag veckan innan |
 | RCC | onsdag vecka 3 varje månad | 9 dagar innan |
 | Board | 3:e torsdagen varje månad | 9 dagar innan |
@@ -68,7 +68,7 @@ Kalendern går alltid före reglerna, eftersom möten kan flyttas och extra- ell
 | Kommando | Exempel |
 |---|---|
 | `/memo-new` | `/memo-new nya IRRBB-limiter, hela vägen till styrelsen` |
-| `/memo-review` | `/memo-review exempel/draft-irrbb-limit-framework.md GAC` |
+| `/memo-review` | `/memo-review exempel/draft-irrbb-limit-framework.md GAAC` |
 | `/memo-plan` | `/memo-plan Board 15 April exempel/committee-calendar.xlsx` |
 | `/memo-qa` | `/memo-qa RCC tough` |
 

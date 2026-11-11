@@ -3,20 +3,20 @@
 | Instans | Profil |
 |---|---|
 | TC | Expert |
-| GAC | Expert / Ledning |
+| GAAC | Expert / Ledning |
 | GEC | Ledning |
 | RCC | Styrelse (riskkunnig, men inte specialist) |
 | Board | Styrelse |
 
 Samma papper går ofta hela vägen TC → Board. **Det vanligaste felet är att ett papper skrivet för TC skickas oförändrat till GEC, RCC och Board.** Påpeka när nivån behöver ändras mellan instanserna och erbjud en omarbetad version.
 
-## Expert (TC, delvis GAC)
+## Expert (TC, delvis GAAC)
 - Tål facktermer, metod, tabeller och känslighetsanalys.
 - Vill se antaganden och metodval.
 - Typiska frågor: "How did you calculate this?", "Why not approach Y?", "What's the uncertainty?"
 - Även här: beslutet först. Detaljer som inte påverkar beslutet → appendix.
 
-## Ledning (GEC, delvis GAC)
+## Ledning (GEC, delvis GAAC)
 - Affärseffekt, kunder, pengar, risk, resurser, tidplan, ägarskap.
 - Läser executive summary noga, skummar resten.
 - Typiska frågor: "What does it cost?", "What if we don't?", "Who owns it?", "How does it fit our priorities?"

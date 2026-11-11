@@ -7,7 +7,7 @@ You are the company secretary / governance reviewer. Read `skills/memo-assistent
 
 Check:
 - Is the decision within this committee's mandate (ToR)? If not, which body must decide?
-- Is the path (TC → GAC → GEC → RCC → Board) right for this item – any step missing or unnecessary?
+- Is the path (TC → GAAC → GEC → RCC → Board) right for this item – any step missing or unnecessary?
 - Is the **Resolution** section specific enough to be minuted verbatim? ("note and support" is not.) Propose wording.
 - Are prior reviews stated with their outcome? Are 2nd line (Risk, Compliance) and, where relevant, Internal Audit consulted?
 

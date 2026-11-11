@@ -5,7 +5,7 @@ Organisationen har ett ark med alla kommittémöten. Förväntade kolumner (namn
 
 | Kolumn | Innehåll |
 |---|---|
-| `Committee` | TC, GAC, GEC, RCC, Board – eller namnet på en ad hoc-kommitté |
+| `Committee` | TC, GAAC, GEC, RCC, Board – eller namnet på en ad hoc-kommitté |
 | `Meeting date` | Mötesdatum |
 | `Pre-read deadline` | Sista dag att skicka in pre-read |
 | `Type` | Ordinary / Moved / Extra / Ad hoc |
@@ -16,16 +16,16 @@ Organisationen har ett ark med alla kommittémöten. Förväntade kolumner (namn
 | `Comment` | Fritext, t.ex. feedback eller villkor |
 
 **Arbetssätt:**
-- **Räkna med skriptet när kodkörning finns**: `scripts/plan_path.py --target Board --date 2027-04-15 --calendar <fil> [--path TC,GAC,GEC,RCC,Board] [--buffer 3]`. Det läser xlsx eller csv, tar med flyttade, extra och ad hoc-möten och skriver tidslinjen med flaggor. Utan kalender räknar det fram mötena från standardrytmen (`scripts/committee_rules.py`). Räkna aldrig datum i huvudet när skriptet går att köra.
+- **Räkna med skriptet när kodkörning finns**: `scripts/plan_path.py --target Board --date 2027-04-15 --calendar <fil> [--path TC,GAAC,GEC,RCC,Board] [--buffer 3]`. Det läser xlsx eller csv, tar med flyttade, extra och ad hoc-möten och skriver tidslinjen med flaggor. Utan kalender räknar det fram mötena från standardrytmen (`scripts/committee_rules.py`). Räkna aldrig datum i huvudet när skriptet går att köra.
 - Be användaren ladda upp arket (eller använd det som redan finns i projektet). Läs det med kodverktyget – gissa aldrig datum.
 - Finns inget ark: be om mötesdatumen för de aktuella kommittéerna och använd fallback-deadlines från `kommitteer.md`.
 - Ändra aldrig i användarens original utan att fråga. Leverera i stället en **uppdaterad kopia** (samma kolumner) med föreslagna ändringar markerade, t.ex. `Booked = Proposed`, och sammanfatta ändringarna i chatten.
 
 ## 1. Bestäm vägen
-Utgå från ärendets mandatbehov och `kommitteer.md` (typisk väg TC → GAC → GEC → RCC → Board). Bekräfta med användaren – många ärenden ska inte hela vägen.
+Utgå från ärendets mandatbehov och `kommitteer.md` (typisk väg TC → GAAC → GEC → RCC → Board). Bekräfta med användaren – många ärenden ska inte hela vägen.
 
 ## 2. Räkna baklänges från målmötet
-Ordningen är alltid TC → GAC → GEC → RCC → Board (se `kommitteer.md` för rytm och deadlines). Använd kalendern; finns inte ett datum där, räkna fram det med reglerna i `kommitteer.md` och säg att det är beräknat.
+Ordningen är alltid TC → GAAC → GEC → RCC → Board (se `kommitteer.md` för rytm och deadlines). Använd kalendern; finns inte ett datum där, räkna fram det med reglerna i `kommitteer.md` och säg att det är beräknat.
 1. Hitta målmötet (sista instansen) och dess pre-read-deadline.
 2. För varje föregående instans: välj **det senaste mötet** som ligger minst **3 arbetsdagar före** nästa instans pre-read-deadline (tid att justera pappret efter feedback). Användaren kan ange en annan buffert.
 3. Ta med **flyttade, extra och ad hoc-möten** från kalendern – ett extramöte kan rädda en tidplan som annars inte går ihop.
@@ -56,7 +56,7 @@ I Claude Docs: lägg tidslinjen i fliken `Förankringsplan`.
 
 ## 4. Bokningar
 - För varje instans som inte är bokad: ta fram ett **utkast till mejl till kommittésekreteraren** (ärende, ansvarig, typ av ärende, önskat möte, uppskattad tid på agendan).
-- Föreslå **förankringssamtal 1:1** med nyckelroller före varje möte (t.ex. CFO före GAC, CRO före RCC) – inga överraskningar i rummet.
+- Föreslå **förankringssamtal 1:1** med nyckelroller före varje möte (t.ex. CFO före GAAC, CRO före RCC) – inga överraskningar i rummet.
 - Finns kalender- eller mejl-connector: föreslå tider/utkast, men **skicka eller boka aldrig utan bekräftelse**.
 - När användaren bekräftar att något är bokat: uppdatera kalenderkopian (`Booked = Yes`).
 

@@ -2,7 +2,7 @@
 """Plan a committee path backwards from a target meeting.
 
 Usage:
-  plan_path.py --target Board --date 2027-04-15 [--path TC,GAC,GEC,RCC,Board]
+  plan_path.py --target Board --date 2027-04-15 [--path TC,GAAC,GEC,RCC,Board]
                [--calendar committee-calendar.xlsx|.csv] [--buffer 3] [--today 2026-11-11]
 
 Uses the calendar when given (it overrides the rules, incl. moved/extra/ad hoc meetings);

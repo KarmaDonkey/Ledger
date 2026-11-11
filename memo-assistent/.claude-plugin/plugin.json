@@ -1,6 +1,6 @@
 {
   "name": "memo-studio",
   "version": "0.3.0",
-  "description": "Memo coach and agent team for committee papers (TC → GAC → GEC → RCC → Board): interview, write, multi-lens review, committee planning and Q&A. Works with Claude Docs.",
+  "description": "Memo coach and agent team for committee papers (TC → GAAC → GEC → RCC → Board): interview, write, multi-lens review, committee planning and Q&A. Works with Claude Docs.",
   "author": { "name": "Memo Studio PoC" }
 }
