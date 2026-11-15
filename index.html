@@ -427,6 +427,23 @@
   .cat-amt { font-family: 'IBM Plex Mono', monospace; font-size: 14px; font-weight: 500; white-space: nowrap; }
   .cat-bar { height: 6px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
   .cat-bar-fill { height: 100%; background: var(--accent); border-radius: 4px; }
+  .cat-share { font-size: 12px; color: var(--ink-faint); margin-left: 8px; }
+  .delta-chip { font-size: 11px; font-weight: 500; margin-left: 8px; padding: 1px 6px; border-radius: 8px; white-space: nowrap; }
+  .delta-chip.up { color: var(--over); background: color-mix(in srgb, var(--over) 14%, transparent); }
+  .delta-chip.down { color: var(--good); background: color-mix(in srgb, var(--good) 14%, transparent); }
+  .delta-chip.flat { color: var(--ink-soft); background: var(--surface-2); }
+  .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 4px 0 14px; }
+  .stat { background: var(--surface); border-radius: 10px; padding: 8px 10px; min-width: 0; }
+  .stat-label { font-size: 11px; color: var(--ink-faint); }
+  .stat-value { font-family: 'IBM Plex Mono', monospace; font-size: 13px; font-weight: 500; margin-top: 2px; overflow-wrap: anywhere; }
+  .chart-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 11.5px; color: var(--ink-soft); margin-top: 8px; }
+  .chart-legend .swatch { display: inline-block; width: 16px; height: 0; border-top: 2px solid var(--accent); vertical-align: middle; margin-right: 5px; }
+  .chart-legend .swatch.prev { border-top: 2px dashed var(--ink-faint); }
+  .pace-block { margin: 0 0 18px; padding: 10px 14px; background: var(--surface); border-radius: 12px; font-size: 13px; }
+  .pace-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 3px 0; color: var(--ink-soft); }
+  .pace-row .mono { color: var(--ink); white-space: nowrap; }
+  .section-title { font-size: 13px; font-weight: 500; color: var(--ink-soft); margin: 16px 0 8px; }
+  .period-row { padding: 8px 0; }
 
   .cat-chips { display: flex; flex-wrap: wrap; gap: 8px; }
   .cat-chip {
@@ -643,7 +660,7 @@
     if (pct >= 60) return 'sunglasses';
     return 'plain';
   }
-  var APP_VERSION = '3.14';
+  var APP_VERSION = '3.15';
   var state = {
     entries: [], allowance: null, categories: [], monthStartDay: 1, view: 'history',
     buckets: { trackingStart: null, funTarget: null, funNote: '', settlements: [], transfers: [] }, badges: [],
@@ -658,7 +675,7 @@
     accessToken: null, accessTokenExpiry: 0, syncing: false, lastError: null
   };
   var storageStatus = { ok: null, lastSaved: null };
-  var analysisState = { periodType: 'month', anchor: new Date(), mode: 'total', drillCategory: null };
+  var analysisState = { periodType: 'month', anchor: new Date(), mode: 'total', drillCategory: null, catSort: 'size' };
 
   function storageSelfTest() {
     try {
@@ -1488,10 +1505,30 @@
     }
     if (series.length === 0) return '';
 
+    // Previous period overlay (Month view): the same running total, aligned
+    // by day of the period, so pace can be compared day for day.
+    var prevSeries = null, prevNote = '';
+    if (opts && opts.prev) {
+      var pByDate = {};
+      opts.prev.items.forEach(function (e) { pByDate[e.date] = (pByDate[e.date] || 0) + e.amount; });
+      prevSeries = [];
+      var pcum = opts.prev.startValue || 0;
+      for (var pi = 0; pi < Math.min(opts.prev.days, days); pi++) {
+        var pd = new Date(opts.prev.period.start);
+        pd.setDate(opts.prev.period.start.getDate() + pi);
+        pcum += state.allowance - (pByDate[dayKey(pd)] || 0);
+        prevSeries.push(pcum);
+      }
+      if (prevSeries.length) {
+        var atSame = prevSeries[Math.min(series.length, prevSeries.length) - 1];
+        prevNote = 'Last period was ' + formatMoney(Math.abs(atSame)) + (atSame >= 0 ? ' under' : ' over') + ' budget at the same point.';
+      } else prevSeries = null;
+    }
+
     var W = 320, H = fit ? 160 : 120;
     var padL = fit ? 46 : 8, padR = 8, padT = 14, padB = fit ? 30 : 14;
     var innerW = W - padL - padR, innerH = H - padT - padB;
-    var values = series.concat([0]);
+    var values = series.concat([0], prevSeries || []);
     var minVal = Math.min.apply(null, values), maxVal = Math.max.apply(null, values);
     if (minVal === maxVal) { minVal -= 100; maxVal += 100; }
     var span = fit ? series.length : days;
@@ -1499,6 +1536,7 @@
     function yAt(v) { return padT + innerH - ((v - minVal) / (maxVal - minVal)) * innerH; }
 
     var pathD = series.map(function (v, i) { return (i === 0 ? 'M' : 'L') + xAt(i).toFixed(1) + ',' + yAt(v).toFixed(1); }).join(' ');
+    var prevPathD = prevSeries ? prevSeries.map(function (v, i) { return (i === 0 ? 'M' : 'L') + xAt(i).toFixed(1) + ',' + yAt(v).toFixed(1); }).join(' ') : '';
     var zeroY = yAt(0).toFixed(1);
     var last = series[series.length - 1];
     var statusColor = last >= 0 ? 'var(--good)' : 'var(--over)';
@@ -1538,9 +1576,12 @@
       '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;">' +
       '<line x1="' + padL + '" y1="' + zeroY + '" x2="' + (W - padR) + '" y2="' + zeroY + '" stroke="var(--ink-faint)" stroke-width="1" stroke-dasharray="3,3"/>' +
       axes +
+      (prevPathD ? '<path class="prev-line" d="' + prevPathD + '" fill="none" stroke="var(--ink-faint)" stroke-width="1.5" stroke-dasharray="4,3" stroke-linecap="round" stroke-linejoin="round"/>' : '') +
       '<path d="' + pathD + '" fill="none" stroke="' + statusColor + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>' +
       '<circle cx="' + lastX + '" cy="' + lastY + '" r="3" fill="' + statusColor + '"/>' +
       '</svg>' +
+      (prevSeries ? '<div class="chart-legend"><span><i class="swatch"></i>This period</span><span><i class="swatch prev"></i>Last period</span></div>' +
+        '<p class="hint" style="margin:6px 0 0;">' + prevNote + '</p>' : '') +
       '</div>';
   }
 
@@ -2239,6 +2280,257 @@
     return isNaN(d.getTime()) ? null : d;
   }
 
+  // ---------------------------------------------------------------
+  // Category drill-down and period comparison (Analysis view)
+  // ---------------------------------------------------------------
+  function dayOffset(period, key) {
+    return Math.round((new Date(key + 'T00:00:00') - period.start) / 86400000);
+  }
+
+  // Sum per day offset from the start of the period.
+  function dailyTotals(period, days, items) {
+    var arr = [];
+    for (var i = 0; i < days; i++) arr.push(0);
+    items.forEach(function (e) {
+      var i = dayOffset(period, e.date);
+      if (i >= 0 && i < days) arr[i] += e.amount;
+    });
+    return arr;
+  }
+
+  // The budget period just before this one, and whether it was fully tracked
+  // (a period that began before tracking started is not a fair comparison).
+  function prevPeriodInfo(period) {
+    var sd = state.monthStartDay;
+    var prev = getMonthPeriod(shiftPeriod(period, 'month', sd, -1), sd);
+    var ts = trackedStartDate();
+    return {
+      period: prev,
+      days: Math.round((prev.end - prev.start) / 86400000) + 1,
+      ok: !!ts && prev.start.getTime() >= ts.getTime(),
+      partial: !!ts && prev.start.getTime() < ts.getTime() && prev.end.getTime() >= ts.getTime()
+    };
+  }
+
+  function sumUpTo(period, n, filterFn) {
+    var total = 0;
+    entriesInPeriod(period).forEach(function (e) {
+      if (filterFn(e) && dayOffset(period, e.date) < n) total += e.amount;
+    });
+    return total;
+  }
+
+  // This period so far against the previous period at the same day.
+  function paceCompare(period, filterFn) {
+    var info = prevPeriodInfo(period);
+    if (!info.ok) return { ok: false, partial: info.partial };
+    var span = periodElapsedDays(period);
+    var n = Math.max(span.elapsedDays, 1);
+    var cur = sumUpTo(period, n, filterFn);
+    var prev = sumUpTo(info.period, n, filterFn);
+    return {
+      ok: true, cur: cur, prev: prev, prevTotal: sumUpTo(info.period, info.days, filterFn),
+      pct: prev > 0 ? (cur - prev) / prev * 100 : null,
+      complete: span.elapsedDays >= span.days
+    };
+  }
+
+  function deltaChipHtml(pct) {
+    if (pct === null || !isFinite(pct)) return '';
+    var r = Math.round(pct);
+    var cls = r > 0 ? 'up' : r < 0 ? 'down' : 'flat';
+    return '<span class="delta-chip ' + cls + '">' + (r > 0 ? '+' : r < 0 ? '−' : '') + Math.abs(r) + '%</span>';
+  }
+
+  function paceBlockHtml(pc) {
+    if (!pc.ok) {
+      return pc.partial
+        ? '<p class="hint" style="margin:0 0 16px;">The previous period was only partly tracked, so there is nothing to compare with.</p>'
+        : '';
+    }
+    return '<div class="pace-block">' +
+      '<div class="pace-row"><span>' + (pc.complete ? 'This period' : 'This period so far') + '</span><span class="mono">' + formatMoney(pc.cur) + '</span></div>' +
+      '<div class="pace-row"><span>Last period' + (pc.complete ? '' : ', same point') + '</span><span class="mono">' + formatMoney(pc.prev) + deltaChipHtml(pc.pct) + '</span></div>' +
+      (pc.complete ? '' : '<div class="pace-row"><span>Last period in total</span><span class="mono">' + formatMoney(pc.prevTotal) + '</span></div>') +
+      '</div>';
+  }
+
+  // Running total (top) and per-day bars (bottom) for one category, with the
+  // previous period's running total dashed behind it in the Month view.
+  function categoryChartHtml(period, days, items, prev) {
+    var today = new Date();
+    today.setHours(0, 0, 0, 0);
+    var shown = Math.min(days, Math.round((today - period.start) / 86400000) + 1);
+    if (shown <= 0) return '';
+    var daily = dailyTotals(period, days, items);
+    var span = prev ? days : shown;
+    var cum = [], run = 0, i;
+    for (i = 0; i < shown; i++) { run += daily[i]; cum.push(run); }
+    var prevCum = null;
+    if (prev) {
+      var pdaily = dailyTotals(prev.period, prev.days, prev.items);
+      prevCum = []; run = 0;
+      for (i = 0; i < Math.min(prev.days, days); i++) { run += pdaily[i]; prevCum.push(run); }
+    }
+    var W = 320, H = 200, padL = 46, padR = 8;
+    var innerW = W - padL - padR;
+    var topA = 16, hA = 84, topB = 128, hB = 38;
+    var allA = cum.concat(prevCum || [], [0]);
+    var maxA = Math.max.apply(null, allA), minA = Math.min.apply(null, allA);
+    if (maxA === minA) maxA = minA + 1;
+    function xAt(k) { return padL + (k + 0.5) / span * innerW; }
+    function yA(v) { return topA + hA - (v - minA) / (maxA - minA) * hA; }
+    function path(arr) { return arr.map(function (v, k) { return (k === 0 ? 'M' : 'L') + xAt(k).toFixed(1) + ',' + yA(v).toFixed(1); }).join(' '); }
+
+    var group = shown > 62 ? 7 : 1;
+    var buckets = [];
+    for (i = 0; i < shown; i++) {
+      var b = Math.floor(i / group);
+      buckets[b] = (buckets[b] || 0) + daily[i];
+    }
+    var maxB = Math.max.apply(null, buckets.concat([0])), minB = Math.min.apply(null, buckets.concat([0]));
+    if (maxB === minB) maxB = minB + 1;
+    function yB(v) { return topB + hB - (v - minB) / (maxB - minB) * hB; }
+    var slotW = innerW / span * group;
+    var barW = Math.max(1, slotW * 0.7);
+    var bars = buckets.map(function (v, k) {
+      var x = padL + (k * group) / span * innerW + (slotW - barW) / 2;
+      var y1 = yB(Math.max(v, 0)), y2 = yB(Math.min(v, 0));
+      return '<rect x="' + x.toFixed(1) + '" y="' + y1.toFixed(1) + '" width="' + barW.toFixed(1) + '" height="' + Math.max(0.5, y2 - y1).toFixed(1) + '" rx="1" fill="var(--accent)" opacity="0.85"/>';
+    }).join('');
+
+    function yLabel(v, y) {
+      return '<text x="' + (padL - 6) + '" y="' + (y + 3).toFixed(1) + '" text-anchor="end" font-size="9" fill="var(--ink-soft)">' + compactMoney(v) + '</text>';
+    }
+    var axes = yLabel(maxA, topA) + (minA === 0 ? yLabel(0, topA + hA) : yLabel(minA, topA + hA)) +
+      yLabel(maxB, topB) + (minB === 0 ? yLabel(0, topB + hB) : yLabel(minB, topB + hB)) +
+      '<text x="' + padL + '" y="' + (topA - 5) + '" font-size="9" fill="var(--ink-soft)">Running total</text>' +
+      '<text x="' + padL + '" y="' + (topB - 5) + '" font-size="9" fill="var(--ink-soft)">' + (group > 1 ? 'Per week' : 'Per day') + '</text>' +
+      '<line x1="' + padL + '" y1="' + (topA + hA) + '" x2="' + (W - padR) + '" y2="' + (topA + hA) + '" stroke="var(--hairline)" stroke-width="1"/>' +
+      '<line x1="' + padL + '" y1="' + yB(0).toFixed(1) + '" x2="' + (W - padR) + '" y2="' + yB(0).toFixed(1) + '" stroke="var(--hairline)" stroke-width="1"/>';
+
+    // date marks: first and last day for short spans, month starts for long ones
+    var ticks = [];
+    function dateAt(k) { var d = new Date(period.start); d.setDate(period.start.getDate() + k); return d; }
+    if (span <= 45) { ticks.push(0); if (span > 1) ticks.push(span - 1); }
+    else {
+      ticks.push(0);
+      for (i = 1; i < span; i++) if (dateAt(i).getDate() === 1) ticks.push(i);
+    }
+    var lastX = -100;
+    ticks.forEach(function (k, n) {
+      var x = xAt(k);
+      if (n > 0 && x - lastX < 34) return;
+      lastX = x;
+      var d = dateAt(k);
+      var label = (span > 45 && k > 0)
+        ? d.toLocaleDateString(undefined, { month: 'short' })
+        : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+      var anchor = k === 0 ? 'start' : (k === span - 1 && span <= 45 ? 'end' : 'middle');
+      axes += '<line x1="' + x.toFixed(1) + '" y1="' + (topB + hB) + '" x2="' + x.toFixed(1) + '" y2="' + (topB + hB + 4) + '" stroke="var(--ink-faint)" stroke-width="1"/>' +
+        '<text x="' + x.toFixed(1) + '" y="' + (H - 8) + '" text-anchor="' + anchor + '" font-size="9" fill="var(--ink-soft)">' + label + '</text>';
+    });
+
+    var lastIdx = cum.length - 1;
+    return '<div class="trend-chart" id="categoryChart">' +
+      '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;">' + axes +
+      (prevCum && prevCum.length ? '<path class="prev-line" d="' + path(prevCum) + '" fill="none" stroke="var(--ink-faint)" stroke-width="1.5" stroke-dasharray="4,3" stroke-linecap="round" stroke-linejoin="round"/>' : '') +
+      '<path d="' + path(cum) + '" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '<circle cx="' + xAt(lastIdx).toFixed(1) + '" cy="' + yA(cum[lastIdx]).toFixed(1) + '" r="3" fill="var(--accent)"/>' +
+      bars + '</svg>' +
+      (prevCum && prevCum.length ? '<div class="chart-legend"><span><i class="swatch"></i>This period</span><span><i class="swatch prev"></i>Last period</span></div>' : '') +
+      '</div>';
+  }
+
+  // Year view: the category's total in each budget period, oldest first.
+  function categoryByPeriodHtml(cat, from, to) {
+    var sd = state.monthStartDay;
+    var periods = [];
+    var p = getMonthPeriod(from, sd);
+    while (p.start.getTime() <= to.getTime() && periods.length < 60) {
+      periods.push(p);
+      p = getMonthPeriod(shiftPeriod(p, 'month', sd, 1), sd);
+    }
+    if (periods.length < 2) return '';
+    var today = new Date();
+    today.setHours(0, 0, 0, 0);
+    var rows = periods.map(function (q) {
+      var total = entriesInPeriod(q)
+        .filter(function (e) { return (e.category || UNCATEGORIZED) === cat; })
+        .reduce(function (s, e) { return s + e.amount; }, 0);
+      return { period: q, total: total, open: q.end.getTime() > today.getTime() };
+    });
+    var max = Math.max.apply(null, rows.map(function (r) { return Math.abs(r.total); }).concat([1]));
+    var html = '<p class="section-title">By period</p>';
+    rows.forEach(function (r) {
+      html += '<div class="period-row"><div class="cat-row-top" style="margin-bottom:4px;">' +
+        '<span class="cat-name" style="font-size:13px;">' + formatPeriodLabel('month', r.period) + (r.open ? ' · so far' : '') + '</span>' +
+        '<span class="cat-amt">' + formatMoney(r.total) + '</span></div>' +
+        '<div class="cat-bar"><div class="cat-bar-fill" style="width:' + Math.round(Math.abs(r.total) / max * 100) + '%;' + (r.open ? 'opacity:.6;' : '') + '"></div></div></div>';
+    });
+    return html;
+  }
+
+  function categoryDetailHtml(cat, type, period, calcPeriod, days, elapsedDays, items, basis) {
+    var inCat = function (e) { return (e.category || UNCATEGORIZED) === cat; };
+    var catItems = items.filter(inCat);
+    var esc = cat.replace(/</g, '&lt;');
+    var html = '<button type="button" class="scan-link" id="backToBreakdown" style="justify-content:flex-start;padding-left:0;">‹ Back</button>';
+    html += '<h2 style="font-size:16px;margin:6px 0 10px;">' + esc + '</h2>';
+    if (catItems.length === 0) return html + '<p class="hint">No transactions.</p>';
+
+    var total = periodTotal(catItems);
+    var purchases = catItems.filter(function (e) { return e.amount > 0; });
+    var largest = purchases.reduce(function (m, e) { return Math.max(m, e.amount); }, 0);
+    var purchaseSum = purchases.reduce(function (s, e) { return s + e.amount; }, 0);
+    if (type !== 'day') {
+      var stats = [
+        ['Total', formatMoney(total)],
+        ['Share of spending', Math.round(Math.abs(total) / (basis || 1) * 100) + '%'],
+        ['Avg / day', formatMoney(total / Math.max(elapsedDays, 1))],
+        ['Purchases', String(purchases.length)],
+        ['Avg / purchase', purchases.length ? formatMoney(purchaseSum / purchases.length) : '–'],
+        ['Largest', purchases.length ? formatMoney(largest) : '–']
+      ];
+      html += '<div class="stat-grid">' + stats.map(function (s) {
+        return '<div class="stat"><div class="stat-label">' + s[0] + '</div><div class="stat-value">' + s[1] + '</div></div>';
+      }).join('') + '</div>';
+
+      if (type === 'month') {
+        var info = prevPeriodInfo(period);
+        var prevSpec = info.ok ? { period: info.period, days: info.days, items: entriesInPeriod(info.period).filter(inCat) } : null;
+        html += categoryChartHtml(period, days, catItems, prevSpec);
+        html += paceBlockHtml(paceCompare(period, inCat));
+      } else {
+        html += categoryChartHtml(calcPeriod, days, catItems, null);
+        var today = new Date();
+        today.setHours(0, 0, 0, 0);
+        var to = period.end.getTime() > today.getTime() ? today : period.end;
+        html += categoryByPeriodHtml(cat, calcPeriod.start, to);
+        // pace of the latest budget period in the range against the one before it
+        var latest = getMonthPeriod(to, state.monthStartDay);
+        html += paceBlockHtml(paceCompare(latest, inCat));
+      }
+    }
+
+    var sort = analysisState.catSort;
+    var sorted = catItems.slice().sort(sort === 'date' ? function (a, b) { return b.ts - a.ts; } : function (a, b) { return b.amount - a.amount; });
+    html += '<p class="section-title">Purchases</p>' +
+      '<div class="type-toggle" id="catSortToggle" style="margin-bottom:8px;">' +
+      '<button type="button" class="type-btn' + (sort !== 'date' ? ' active' : '') + '" data-sort="size">Biggest first</button>' +
+      '<button type="button" class="type-btn' + (sort === 'date' ? ' active' : '') + '" data-sort="date">Latest first</button></div>';
+    sorted.forEach(function (e) {
+      html += '<div class="entry-row" data-id="' + e.id + '">' +
+        '<span class="entry-desc">' + (e.description || '(no description)').replace(/</g, '&lt;') +
+        '<span class="entry-author-tag">' + new Date(e.date + 'T00:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + '</span>' +
+        (e.bucket ? '<span class="entry-bucket-tag">' + BUCKET_LABELS[e.bucket] + '</span>' : '') +
+        (e.updatedBy ? '<span class="entry-author-tag">' + authorLabel(e.updatedBy).replace(/</g, '&lt;') + '</span>' : '') + '</span>' +
+        '<span class="entry-amount mono' + (e.amount < 0 ? ' refund' : '') + '">' + formatMoney(e.amount) + '</span>' +
+        '</div>';
+    });
+    return html;
+  }
+
   function renderAnalysis() {
     var view = document.getElementById('analysisView');
     var type = analysisState.periodType;
@@ -2315,27 +2607,25 @@
 
     if (type !== 'day' && !analysisState.drillCategory && !untracked) {
       var chartStart = (type === 'month') ? carryInForPeriod(period) - transferNet(period) : 0;
-      html += budgetTrendChartHtml(calcPeriod, days, budgetItems, chartStart,
-        type === 'year' ? { fit: true, sinceStart: calcStart.getTime() > period.start.getTime() ? calcStart : null } : null);
+      var chartOpts = null;
+      if (type === 'year') {
+        chartOpts = { fit: true, sinceStart: calcStart.getTime() > period.start.getTime() ? calcStart : null };
+      } else {
+        var pinfo = prevPeriodInfo(period);
+        if (pinfo.ok) {
+          chartOpts = { prev: {
+            period: pinfo.period, days: pinfo.days,
+            items: entriesInPeriod(pinfo.period).filter(function (e) { return e.bucket !== 'fun'; }),
+            startValue: carryInForPeriod(pinfo.period) - transferNet(pinfo.period)
+          } };
+        }
+      }
+      html += budgetTrendChartHtml(calcPeriod, days, budgetItems, chartStart, chartOpts);
     }
 
     if (analysisState.drillCategory) {
-      var catItems = items.filter(function (e) { return (e.category || UNCATEGORIZED) === analysisState.drillCategory; })
-        .sort(function (a, b) { return b.ts - a.ts; });
-      html += '<button type="button" class="scan-link" id="backToBreakdown" style="justify-content:flex-start;padding-left:0;">‹ Back</button>';
-      html += '<h2 style="font-size:16px;margin:6px 0 10px;">' + analysisState.drillCategory + '</h2>';
-      if (catItems.length === 0) {
-        html += '<p class="hint">No transactions.</p>';
-      } else {
-        catItems.forEach(function (e) {
-          html += '<div class="entry-row" data-id="' + e.id + '">' +
-            '<span class="entry-desc">' + (e.description || '(no description)') +
-            (e.bucket ? '<span class="entry-bucket-tag">' + BUCKET_LABELS[e.bucket] + '</span>' : '') +
-            (e.updatedBy ? '<span class="entry-author-tag">' + authorLabel(e.updatedBy).replace(/</g, '&lt;') + '</span>' : '') + '</span>' +
-            '<span class="entry-amount mono' + (e.amount < 0 ? ' refund' : '') + '">' + formatMoney(e.amount) + '</span>' +
-            '</div>';
-        });
-      }
+      var drillBasis = categoryBreakdown(items).reduce(function (s2, b) { return s2 + Math.abs(b.total); }, 0) || 1;
+      html += categoryDetailHtml(analysisState.drillCategory, type, period, calcPeriod, days, elapsedDays, items, drillBasis);
     } else {
       var breakdown = categoryBreakdown(items);
       if (breakdown.length === 0) {
@@ -2345,8 +2635,13 @@
         html += '<div class="cat-breakdown">';
         breakdown.forEach(function (b) {
           var pct = Math.round(Math.abs(b.total) / basis * 100);
+          var chip = '';
+          if (type === 'month') {
+            var pcRow = paceCompare(period, function (e) { return (e.category || UNCATEGORIZED) === b.category; });
+            if (pcRow.ok) chip = deltaChipHtml(pcRow.pct);
+          }
           html += '<div class="cat-row" data-cat="' + b.category.replace(/"/g, '&quot;') + '">' +
-            '<div class="cat-row-top"><span class="cat-name">' + b.category + '</span><span class="cat-amt">' + formatMoney(b.total) + '</span></div>' +
+            '<div class="cat-row-top"><span class="cat-name">' + b.category + '<span class="cat-share">' + pct + '%</span>' + chip + '</span><span class="cat-amt">' + formatMoney(b.total) + '</span></div>' +
             '<div class="cat-bar"><div class="cat-bar-fill" style="width:' + pct + '%"></div></div>' +
             '</div>';
         });
@@ -2391,6 +2686,12 @@
     if (moveToFun) moveToFun.addEventListener('click', function () { openMovePanel('toFun'); });
     var moveToBuffer = document.getElementById('moveToBufferBtn');
     if (moveToBuffer) moveToBuffer.addEventListener('click', function () { openMovePanel('toBuffer'); });
+    var sortToggle = document.getElementById('catSortToggle');
+    if (sortToggle) {
+      sortToggle.querySelectorAll('.type-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () { analysisState.catSort = btn.dataset.sort; renderAnalysis(); });
+      });
+    }
     var back = document.getElementById('backToBreakdown');
     if (back) back.addEventListener('click', function () { analysisState.drillCategory = null; renderAnalysis(); });
     document.querySelectorAll('.cat-row').forEach(function (row) {
