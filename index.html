@@ -439,6 +439,10 @@
   .chart-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 11.5px; color: var(--ink-soft); margin-top: 8px; }
   .chart-legend .swatch { display: inline-block; width: 16px; height: 0; border-top: 2px solid var(--accent); vertical-align: middle; margin-right: 5px; }
   .chart-legend .swatch.prev { border-top: 2px dashed var(--ink-faint); }
+  .chart-legend .swatch.prev2 { border-top: 2px dotted var(--ink-faint); }
+  .compare-row { display: flex; align-items: center; gap: 10px; margin: 4px 0 10px; }
+  .compare-label { font-size: 12px; color: var(--ink-soft); }
+  .compare-row .type-toggle { flex: 1; margin: 0; }
   .pace-block { margin: 0 0 18px; padding: 10px 14px; background: var(--surface); border-radius: 12px; font-size: 13px; }
   .pace-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 3px 0; color: var(--ink-soft); }
   .pace-row .mono { color: var(--ink); white-space: nowrap; }
@@ -660,7 +664,7 @@
     if (pct >= 60) return 'sunglasses';
     return 'plain';
   }
-  var APP_VERSION = '3.15';
+  var APP_VERSION = '3.16';
   var state = {
     entries: [], allowance: null, categories: [], monthStartDay: 1, view: 'history',
     buckets: { trackingStart: null, funTarget: null, funNote: '', settlements: [], transfers: [] }, badges: [],
@@ -675,7 +679,7 @@
     accessToken: null, accessTokenExpiry: 0, syncing: false, lastError: null
   };
   var storageStatus = { ok: null, lastSaved: null };
-  var analysisState = { periodType: 'month', anchor: new Date(), mode: 'total', drillCategory: null, catSort: 'size' };
+  var analysisState = { periodType: 'month', anchor: new Date(), mode: 'total', drillCategory: null, catSort: 'size', compare: loadCompareLevel() };
 
   function storageSelfTest() {
     try {
@@ -1476,6 +1480,13 @@
   // a running (allowance - spent) total day by day, up to today, against
   // a dashed zero-line reference (spanning the full period) showing where
   // "exactly on budget" would sit.
+  // Look of the comparison lines: last period dashed, the one before dotted.
+  function prevDash(k) { return k === 0 ? ' stroke-dasharray="4,3"' : ' stroke-dasharray="1.5,3.5" opacity="0.8"'; }
+  function compareLegendHtml(n) {
+    return '<div class="chart-legend"><span><i class="swatch"></i>This period</span><span><i class="swatch prev"></i>Last period</span>' +
+      (n > 1 ? '<span><i class="swatch prev2"></i>2 periods ago</span>' : '') + '</div>';
+  }
+
   function compactMoney(v) {
     var a = Math.abs(v), sign = v < 0 ? '-' : '';
     if (a >= 10000) return sign + Math.round(a / 1000) + 'k';
@@ -1507,28 +1518,30 @@
 
     // Previous period overlay (Month view): the same running total, aligned
     // by day of the period, so pace can be compared day for day.
-    var prevSeries = null, prevNote = '';
-    if (opts && opts.prev) {
+    var prevLines = [], prevNote = '';
+    ((opts && opts.prevs) || []).forEach(function (pv, k) {
       var pByDate = {};
-      opts.prev.items.forEach(function (e) { pByDate[e.date] = (pByDate[e.date] || 0) + e.amount; });
-      prevSeries = [];
-      var pcum = opts.prev.startValue || 0;
-      for (var pi = 0; pi < Math.min(opts.prev.days, days); pi++) {
-        var pd = new Date(opts.prev.period.start);
-        pd.setDate(opts.prev.period.start.getDate() + pi);
+      pv.items.forEach(function (e) { pByDate[e.date] = (pByDate[e.date] || 0) + e.amount; });
+      var ps = [], pcum = pv.startValue || 0;
+      for (var pi = 0; pi < Math.min(pv.days, days); pi++) {
+        var pd = new Date(pv.period.start);
+        pd.setDate(pv.period.start.getDate() + pi);
         pcum += state.allowance - (pByDate[dayKey(pd)] || 0);
-        prevSeries.push(pcum);
+        ps.push(pcum);
       }
-      if (prevSeries.length) {
-        var atSame = prevSeries[Math.min(series.length, prevSeries.length) - 1];
+      if (!ps.length) return;
+      prevLines.push({ k: k, series: ps });
+      if (k === 0) {
+        var atSame = ps[Math.min(series.length, ps.length) - 1];
         prevNote = 'Last period was ' + formatMoney(Math.abs(atSame)) + (atSame >= 0 ? ' under' : ' over') + ' budget at the same point.';
-      } else prevSeries = null;
-    }
+      }
+    });
 
     var W = 320, H = fit ? 160 : 120;
     var padL = fit ? 46 : 8, padR = 8, padT = 14, padB = fit ? 30 : 14;
     var innerW = W - padL - padR, innerH = H - padT - padB;
-    var values = series.concat([0], prevSeries || []);
+    var values = series.concat([0]);
+    prevLines.forEach(function (pl) { values = values.concat(pl.series); });
     var minVal = Math.min.apply(null, values), maxVal = Math.max.apply(null, values);
     if (minVal === maxVal) { minVal -= 100; maxVal += 100; }
     var span = fit ? series.length : days;
@@ -1536,7 +1549,10 @@
     function yAt(v) { return padT + innerH - ((v - minVal) / (maxVal - minVal)) * innerH; }
 
     var pathD = series.map(function (v, i) { return (i === 0 ? 'M' : 'L') + xAt(i).toFixed(1) + ',' + yAt(v).toFixed(1); }).join(' ');
-    var prevPathD = prevSeries ? prevSeries.map(function (v, i) { return (i === 0 ? 'M' : 'L') + xAt(i).toFixed(1) + ',' + yAt(v).toFixed(1); }).join(' ') : '';
+    var prevPaths = prevLines.slice().reverse().map(function (pl) {
+      var d = pl.series.map(function (v, i) { return (i === 0 ? 'M' : 'L') + xAt(i).toFixed(1) + ',' + yAt(v).toFixed(1); }).join(' ');
+      return '<path class="prev-line prev-' + pl.k + '" d="' + d + '" fill="none" stroke="var(--ink-faint)" stroke-width="1.5"' + prevDash(pl.k) + ' stroke-linecap="round" stroke-linejoin="round"/>';
+    }).join('');
     var zeroY = yAt(0).toFixed(1);
     var last = series[series.length - 1];
     var statusColor = last >= 0 ? 'var(--good)' : 'var(--over)';
@@ -1576,12 +1592,11 @@
       '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;">' +
       '<line x1="' + padL + '" y1="' + zeroY + '" x2="' + (W - padR) + '" y2="' + zeroY + '" stroke="var(--ink-faint)" stroke-width="1" stroke-dasharray="3,3"/>' +
       axes +
-      (prevPathD ? '<path class="prev-line" d="' + prevPathD + '" fill="none" stroke="var(--ink-faint)" stroke-width="1.5" stroke-dasharray="4,3" stroke-linecap="round" stroke-linejoin="round"/>' : '') +
+      prevPaths +
       '<path d="' + pathD + '" fill="none" stroke="' + statusColor + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>' +
       '<circle cx="' + lastX + '" cy="' + lastY + '" r="3" fill="' + statusColor + '"/>' +
       '</svg>' +
-      (prevSeries ? '<div class="chart-legend"><span><i class="swatch"></i>This period</span><span><i class="swatch prev"></i>Last period</span></div>' +
-        '<p class="hint" style="margin:6px 0 0;">' + prevNote + '</p>' : '') +
+      (prevLines.length ? compareLegendHtml(prevLines.length) + '<p class="hint" style="margin:6px 0 0;">' + prevNote + '</p>' : '') +
       '</div>';
   }
 
@@ -2312,6 +2327,36 @@
     };
   }
 
+  // Up to `count` consecutive earlier periods that were fully tracked.
+  function prevPeriodsFor(period, count) {
+    var out = [], cur = period;
+    for (var k = 0; k < count; k++) {
+      var info = prevPeriodInfo(cur);
+      if (!info.ok) break;
+      out.push(info);
+      cur = info.period;
+    }
+    return out;
+  }
+
+  function loadCompareLevel() {
+    try { var v = parseInt(localStorage.getItem('ledger.ui.compare.v1'), 10); if (v === 0 || v === 1 || v === 2) return v; } catch (e) {}
+    return 1;
+  }
+  function saveCompareLevel(v) { try { localStorage.setItem('ledger.ui.compare.v1', String(v)); } catch (e) {} }
+
+  // The Compare switch (Month view): how many earlier periods the chart shows.
+  function compareToggleHtml(available) {
+    if (available < 1) return '';
+    var lvl = Math.min(analysisState.compare, available);
+    return '<div class="compare-row"><span class="compare-label">Compare</span>' +
+      '<div class="type-toggle" id="compareToggle">' +
+      [[0, 'Off'], [1, 'Last period'], [2, 'Last 2']].map(function (o) {
+        var dis = o[0] > available;
+        return '<button type="button" class="type-btn' + (o[0] === lvl ? ' active' : '') + '" data-compare="' + o[0] + '"' + (dis ? ' disabled style="opacity:.4;"' : '') + '>' + o[1] + '</button>';
+      }).join('') + '</div></div>';
+  }
+
   function sumUpTo(period, n, filterFn) {
     var total = 0;
     entriesInPeriod(period).forEach(function (e) {
@@ -2357,25 +2402,28 @@
 
   // Running total (top) and per-day bars (bottom) for one category, with the
   // previous period's running total dashed behind it in the Month view.
-  function categoryChartHtml(period, days, items, prev) {
+  function categoryChartHtml(period, days, items, prevs) {
+    prevs = prevs || [];
     var today = new Date();
     today.setHours(0, 0, 0, 0);
     var shown = Math.min(days, Math.round((today - period.start) / 86400000) + 1);
     if (shown <= 0) return '';
     var daily = dailyTotals(period, days, items);
-    var span = prev ? days : shown;
+    var span = prevs.length ? days : shown;
     var cum = [], run = 0, i;
     for (i = 0; i < shown; i++) { run += daily[i]; cum.push(run); }
-    var prevCum = null;
-    if (prev) {
-      var pdaily = dailyTotals(prev.period, prev.days, prev.items);
-      prevCum = []; run = 0;
-      for (i = 0; i < Math.min(prev.days, days); i++) { run += pdaily[i]; prevCum.push(run); }
-    }
+    var prevLines = [];
+    prevs.forEach(function (pv, k) {
+      var pdaily = dailyTotals(pv.period, pv.days, pv.items);
+      var pc = [], r = 0;
+      for (var q = 0; q < Math.min(pv.days, days); q++) { r += pdaily[q]; pc.push(r); }
+      if (pc.length) prevLines.push({ k: k, series: pc });
+    });
     var W = 320, H = 200, padL = 46, padR = 8;
     var innerW = W - padL - padR;
     var topA = 16, hA = 84, topB = 128, hB = 38;
-    var allA = cum.concat(prevCum || [], [0]);
+    var allA = cum.concat([0]);
+    prevLines.forEach(function (pl) { allA = allA.concat(pl.series); });
     var maxA = Math.max.apply(null, allA), minA = Math.min.apply(null, allA);
     if (maxA === minA) maxA = minA + 1;
     function xAt(k) { return padL + (k + 0.5) / span * innerW; }
@@ -2434,11 +2482,13 @@
     var lastIdx = cum.length - 1;
     return '<div class="trend-chart" id="categoryChart">' +
       '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;">' + axes +
-      (prevCum && prevCum.length ? '<path class="prev-line" d="' + path(prevCum) + '" fill="none" stroke="var(--ink-faint)" stroke-width="1.5" stroke-dasharray="4,3" stroke-linecap="round" stroke-linejoin="round"/>' : '') +
+      prevLines.slice().reverse().map(function (pl) {
+        return '<path class="prev-line prev-' + pl.k + '" d="' + path(pl.series) + '" fill="none" stroke="var(--ink-faint)" stroke-width="1.5"' + prevDash(pl.k) + ' stroke-linecap="round" stroke-linejoin="round"/>';
+      }).join('') +
       '<path d="' + path(cum) + '" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>' +
       '<circle cx="' + xAt(lastIdx).toFixed(1) + '" cy="' + yA(cum[lastIdx]).toFixed(1) + '" r="3" fill="var(--accent)"/>' +
       bars + '</svg>' +
-      (prevCum && prevCum.length ? '<div class="chart-legend"><span><i class="swatch"></i>This period</span><span><i class="swatch prev"></i>Last period</span></div>' : '') +
+      (prevLines.length ? compareLegendHtml(prevLines.length) : '') +
       '</div>';
   }
 
@@ -2497,9 +2547,12 @@
       }).join('') + '</div>';
 
       if (type === 'month') {
-        var info = prevPeriodInfo(period);
-        var prevSpec = info.ok ? { period: info.period, days: info.days, items: entriesInPeriod(info.period).filter(inCat) } : null;
-        html += categoryChartHtml(period, days, catItems, prevSpec);
+        var avail = prevPeriodsFor(period, 2);
+        var shownPrevs = avail.slice(0, analysisState.compare).map(function (pi2) {
+          return { period: pi2.period, days: pi2.days, items: entriesInPeriod(pi2.period).filter(inCat) };
+        });
+        html += compareToggleHtml(avail.length);
+        html += categoryChartHtml(period, days, catItems, shownPrevs);
         html += paceBlockHtml(paceCompare(period, inCat));
       } else {
         html += categoryChartHtml(calcPeriod, days, catItems, null);
@@ -2611,13 +2664,16 @@
       if (type === 'year') {
         chartOpts = { fit: true, sinceStart: calcStart.getTime() > period.start.getTime() ? calcStart : null };
       } else {
-        var pinfo = prevPeriodInfo(period);
-        if (pinfo.ok) {
-          chartOpts = { prev: {
-            period: pinfo.period, days: pinfo.days,
-            items: entriesInPeriod(pinfo.period).filter(function (e) { return e.bucket !== 'fun'; }),
-            startValue: carryInForPeriod(pinfo.period) - transferNet(pinfo.period)
-          } };
+        var availT = prevPeriodsFor(period, 2);
+        html += compareToggleHtml(availT.length);
+        if (availT.length) {
+          chartOpts = { prevs: availT.slice(0, analysisState.compare).map(function (pi2) {
+            return {
+              period: pi2.period, days: pi2.days,
+              items: entriesInPeriod(pi2.period).filter(function (e) { return e.bucket !== 'fun'; }),
+              startValue: carryInForPeriod(pi2.period) - transferNet(pi2.period)
+            };
+          }) };
         }
       }
       html += budgetTrendChartHtml(calcPeriod, days, budgetItems, chartStart, chartOpts);
@@ -2686,6 +2742,17 @@
     if (moveToFun) moveToFun.addEventListener('click', function () { openMovePanel('toFun'); });
     var moveToBuffer = document.getElementById('moveToBufferBtn');
     if (moveToBuffer) moveToBuffer.addEventListener('click', function () { openMovePanel('toBuffer'); });
+    var compareToggle = document.getElementById('compareToggle');
+    if (compareToggle) {
+      compareToggle.querySelectorAll('.type-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          if (btn.disabled) return;
+          analysisState.compare = parseInt(btn.dataset.compare, 10);
+          saveCompareLevel(analysisState.compare);
+          renderAnalysis();
+        });
+      });
+    }
     var sortToggle = document.getElementById('catSortToggle');
     if (sortToggle) {
       sortToggle.querySelectorAll('.type-btn').forEach(function (btn) {
