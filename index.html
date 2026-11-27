@@ -468,7 +468,13 @@
     padding: 9px 10px; font-size: 14px; color: var(--ink); font-family: inherit;
   }
 
-  .scan-row-cat { padding: 0 0 9px 28px; margin-top: -5px; }
+  .scan-row-cat { padding: 0 0 9px 28px; margin-top: -5px; display: flex; align-items: center; gap: 8px; }
+  .auto-tag { font-size: 11px; color: var(--ink-soft); background: var(--surface-2); border-radius: 8px; padding: 1px 7px; }
+  .remember-note { font-size: 12.5px; color: var(--ink-soft); padding: 0 0 9px 28px; margin-top: -4px; }
+  .remember-note button { font: inherit; font-size: 12.5px; margin-left: 8px; padding: 2px 9px; border-radius: 8px; border: 1px solid var(--hairline); background: var(--surface); color: var(--ink); cursor: pointer; }
+  .remember-note .remember-yes { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .rule-text { flex: 1; min-width: 0; }
+  .rule-select { max-width: 120px; padding: 8px 6px; border-radius: 8px; border: 1px solid var(--hairline); background: var(--surface); color: var(--ink); font: inherit; font-size: 14px; }
   .scan-row-cat select {
     width: 100%; background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 8px;
     padding: 6px 8px; font-size: 13px; color: var(--ink); font-family: inherit;
@@ -626,6 +632,7 @@
   function CATEGORY_MIGRATION_KEY() { return profileKey('categoriesMigrationV2'); }
   function BUCKET_MODEL_MIGRATION_KEY() { return profileKey('bucketModelMigrationV2'); }
   function SETTINGS_META_KEY() { return profileKey('settingsMeta'); }
+  function CAT_RULES_KEY() { return profileKey('catRules'); }
   var ONEDRIVE_KEY = 'ledger.onedrive.v1';
 
   // One-time migration: before profiles existed, everything lived under
@@ -664,11 +671,12 @@
     if (pct >= 60) return 'sunglasses';
     return 'plain';
   }
-  var APP_VERSION = '3.16';
+  var APP_VERSION = '3.17';
   var state = {
     entries: [], allowance: null, categories: [], monthStartDay: 1, view: 'history',
     buckets: { trackingStart: null, funTarget: null, funNote: '', settlements: [], transfers: [] }, badges: [],
-    deletedIds: [], settingsMeta: { allowance: 0, monthStartDay: 0, fun: 0, categories: 0 }
+    deletedIds: [], settingsMeta: { allowance: 0, monthStartDay: 0, fun: 0, categories: 0, rules: 0 },
+    catRules: []
   };
   // Shared with (OneDrive): clientId/refreshToken/remoteRef/lastSyncedAt/lastEtag/accountLabel
   // persist to ONEDRIVE_KEY; accessToken/accessTokenExpiry/syncing/lastError are runtime-only.
@@ -731,6 +739,13 @@
     saveEntries();
   }
 
+  // Words in a purchase description that mean a category, e.g. "ica" -> Mat.
+  // Seeded once per profile; after that the person owns the list.
+  var STARTER_RULES = [
+    ['ICA', 'Mat'], ['Coop', 'Mat'], ['Thailaan', 'Mat'], ['AM Store', 'Mat'],
+    ['Hemköp', 'Mat'], ['Willys', 'Mat'], ['Lidl', 'Mat']
+  ];
+
   function loadState() {
     try {
       var rawEntries = localStorage.getItem(STORE_KEY());
@@ -748,6 +763,17 @@
       var rawCats = localStorage.getItem(CATEGORIES_KEY());
       state.categories = rawCats ? JSON.parse(rawCats) : DEFAULT_CATEGORIES.slice();
     } catch (e) { state.categories = DEFAULT_CATEGORIES.slice(); }
+    try {
+      var rawRules = localStorage.getItem(CAT_RULES_KEY());
+      if (rawRules === null) {
+        state.catRules = STARTER_RULES.filter(function (r) { return state.categories.indexOf(r[1]) !== -1; })
+          .map(function (r) { return { text: r[0], category: r[1] }; });
+        saveCatRules();
+      } else {
+        var parsedRules = JSON.parse(rawRules);
+        state.catRules = Array.isArray(parsedRules) ? parsedRules.filter(function (r) { return r && typeof r.text === 'string' && typeof r.category === 'string'; }) : [];
+      }
+    } catch (e) { state.catRules = []; }
     try {
       var rawStart = localStorage.getItem(MONTH_START_KEY());
       state.monthStartDay = rawStart !== null ? parseInt(rawStart, 10) : 1;
@@ -805,7 +831,7 @@
       var rawMeta = localStorage.getItem(SETTINGS_META_KEY());
       if (rawMeta) {
         var parsedMeta = JSON.parse(rawMeta);
-        ['allowance', 'monthStartDay', 'fun', 'categories'].forEach(function (f) {
+        ['allowance', 'monthStartDay', 'fun', 'categories', 'rules'].forEach(function (f) {
           state.settingsMeta[f] = typeof parsedMeta[f] === 'number' ? parsedMeta[f] : 0;
         });
       } else {
@@ -816,7 +842,8 @@
           allowance: (state.allowance !== null && !isNaN(state.allowance)) ? nowStamp : 0,
           monthStartDay: state.monthStartDay !== 1 ? nowStamp : 0,
           fun: (state.buckets.funTarget !== null || state.buckets.funNote) ? nowStamp : 0,
-          categories: state.categories.slice().sort().join('|') !== DEFAULT_CATEGORIES.slice().sort().join('|') ? nowStamp : 0
+          categories: state.categories.slice().sort().join('|') !== DEFAULT_CATEGORIES.slice().sort().join('|') ? nowStamp : 0,
+          rules: 0
         };
         saveSettingsMeta();
       }
@@ -848,6 +875,10 @@
       storageStatus.lastSaved = Date.now();
       try { localStorage.setItem(LAST_SAVED_KEY(), String(storageStatus.lastSaved)); } catch (e2) {}
     } catch (e) { storageStatus.ok = false; }
+  }
+
+  function saveCatRules() {
+    try { localStorage.setItem(CAT_RULES_KEY(), JSON.stringify(state.catRules)); } catch (e) {}
   }
 
   function saveMonthStartDay() {
@@ -1258,7 +1289,7 @@
   // setting group carries the time it was last edited on purpose; the newer
   // edit wins. Settlements are unioned by period; the earliest tracking
   // start is kept.
-  var SETTING_GROUPS = ['allowance', 'monthStartDay', 'fun', 'categories'];
+  var SETTING_GROUPS = ['allowance', 'monthStartDay', 'fun', 'categories', 'rules'];
 
   function buildSettingsPayload() {
     return {
@@ -1266,6 +1297,7 @@
       allowance: (state.allowance !== null && !isNaN(state.allowance)) ? state.allowance : null,
       monthStartDay: state.monthStartDay,
       categories: state.categories.slice(),
+      rules: state.catRules.map(function (r) { return { text: r.text, category: r.category }; }),
       funTarget: state.buckets.funTarget === undefined ? null : state.buckets.funTarget,
       funNote: state.buckets.funNote || '',
       trackingStart: state.buckets.trackingStart || null,
@@ -1288,6 +1320,10 @@
       ? r.categories.filter(function (c) { return typeof c === 'string' && c.trim() && c.length <= 60; })
           .map(function (c) { return c.trim(); })
           .filter(function (c) { if (seen[c]) return false; seen[c] = true; return true; })
+      : null;
+    out.rules = Array.isArray(r.rules)
+      ? r.rules.filter(function (x) { return x && typeof x.text === 'string' && x.text.trim() && x.text.length <= 60 && typeof x.category === 'string' && x.category.length <= 60; })
+          .slice(0, 300).map(function (x) { return { text: x.text.trim(), category: x.category }; })
       : null;
     out.funTarget = (num(r.funTarget) && r.funTarget >= 0) ? r.funTarget : null;
     out.funNote = typeof r.funNote === 'string' ? r.funNote.slice(0, 200) : '';
@@ -1312,9 +1348,9 @@
     if (!remote) return local;
     var lm = local.meta || {};
     var out = {
-      v: 1, allowance: local.allowance, monthStartDay: local.monthStartDay, categories: local.categories,
+      v: 1, allowance: local.allowance, monthStartDay: local.monthStartDay, categories: local.categories, rules: local.rules,
       funTarget: local.funTarget, funNote: local.funNote, trackingStart: local.trackingStart, settlements: [], transfers: [],
-      meta: { allowance: lm.allowance || 0, monthStartDay: lm.monthStartDay || 0, fun: lm.fun || 0, categories: lm.categories || 0 }
+      meta: { allowance: lm.allowance || 0, monthStartDay: lm.monthStartDay || 0, fun: lm.fun || 0, categories: lm.categories || 0, rules: lm.rules || 0 }
     };
     if ((preferRemote || remote.meta.allowance >= out.meta.allowance) && remote.allowance !== null) {
       out.allowance = remote.allowance; out.meta.allowance = remote.meta.allowance;
@@ -1324,6 +1360,9 @@
     }
     if ((preferRemote || remote.meta.categories >= out.meta.categories) && remote.categories && remote.categories.length) {
       out.categories = remote.categories; out.meta.categories = remote.meta.categories;
+    }
+    if ((preferRemote || remote.meta.rules >= out.meta.rules) && remote.rules) {
+      out.rules = remote.rules; out.meta.rules = remote.meta.rules;
     }
     if (preferRemote || remote.meta.fun >= out.meta.fun) {
       out.funTarget = remote.funTarget; out.funNote = remote.funNote; out.meta.fun = remote.meta.fun;
@@ -1359,6 +1398,10 @@
     if (JSON.stringify(cats) !== JSON.stringify(state.categories)) {
       state.categories = cats;
       saveCategories();
+    }
+    if (Array.isArray(merged.rules) && JSON.stringify(merged.rules) !== JSON.stringify(state.catRules)) {
+      state.catRules = merged.rules.slice();
+      saveCatRules();
     }
     var before = JSON.stringify(state.buckets);
     state.buckets.funTarget = merged.funTarget === undefined ? null : merged.funTarget;
@@ -3236,9 +3279,12 @@
           if (!newName || newName === oldName) { inp.value = oldName; return; }
           state.categories[i] = newName;
           state.entries.forEach(function (e) { if (e.category === oldName) { e.category = newName; e.updatedAt = Date.now(); } });
+          var renamedRules = false;
+          state.catRules.forEach(function (r) { if (r.category === oldName) { r.category = newName; renamedRules = true; } });
           saveCategories();
           saveEntries();
           touchSetting('categories');
+          if (renamedRules) { saveCatRules(); touchSetting('rules'); renderRuleList(); }
           scheduleSync();
         });
       });
@@ -3248,9 +3294,13 @@
           var name = state.categories[i];
           state.categories.splice(i, 1);
           state.entries.forEach(function (e) { if (e.category === name) { e.category = null; e.updatedAt = Date.now(); } });
+          var keptRules = state.catRules.filter(function (r) { return r.category !== name; });
+          var droppedRules = keptRules.length !== state.catRules.length;
+          state.catRules = keptRules;
           saveCategories();
           saveEntries();
           touchSetting('categories');
+          if (droppedRules) { saveCatRules(); touchSetting('rules'); renderRuleList(); }
           scheduleSync();
           renderList();
         });
@@ -3267,6 +3317,153 @@
       scheduleSync();
       inp.value = '';
       renderList();
+      renderRuleList();
+    });
+  }
+
+  // ---------------------------------------------------------------
+  // Auto-categories: a purchase description that contains a rule's text
+  // gets that rule's category. Without a matching rule Ledger falls back
+  // to what the same shop was filed as before.
+  // ---------------------------------------------------------------
+  function isWordChar(ch) { return !!ch && /[a-zåäöéü0-9]/i.test(ch); }
+
+  // True if `needle` occurs in `hay` starting at the beginning of a word.
+  function containsAtWordStart(hay, needle) {
+    var from = 0, i;
+    while ((i = hay.indexOf(needle, from)) !== -1) {
+      if (i === 0 || !isWordChar(hay.charAt(i - 1))) return true;
+      from = i + 1;
+    }
+    return false;
+  }
+
+  // The first word (or two, if the first is very short) of a description.
+  function merchantKey(desc) {
+    var words = String(desc || '').toLowerCase().replace(/[^a-zåäöéü\s]/g, ' ').split(/\s+/).filter(Boolean);
+    if (!words.length) return '';
+    var w = words[0];
+    if (w.length < 3 && words[1]) w = w + ' ' + words[1];
+    return w.length >= 3 ? w : '';
+  }
+
+  function historyIndex() {
+    var idx = {};
+    state.entries.forEach(function (e) {
+      if (!e.category || state.categories.indexOf(e.category) === -1) return;
+      var k = merchantKey(e.description);
+      if (!k) return;
+      var m = idx[k] || (idx[k] = {});
+      var c = m[e.category] || (m[e.category] = { n: 0, last: 0 });
+      c.n++;
+      c.last = Math.max(c.last, e.ts || 0);
+    });
+    return idx;
+  }
+
+  // -> { category, source: 'rule' | 'history' } or null
+  function suggestCategory(desc, idx) {
+    var d = String(desc || '').toLowerCase();
+    if (!d.trim()) return null;
+    var best = null;
+    state.catRules.forEach(function (r) {
+      var t = r.text.toLowerCase().trim();
+      if (!t || state.categories.indexOf(r.category) === -1) return;
+      if (containsAtWordStart(d, t) && (!best || t.length > best.len)) best = { len: t.length, category: r.category };
+    });
+    if (best) return { category: best.category, source: 'rule' };
+    var k = merchantKey(desc);
+    var m = k && idx && idx[k];
+    if (!m) return null;
+    var top = null;
+    Object.keys(m).forEach(function (cat) {
+      if (!top || m[cat].n > m[top].n || (m[cat].n === m[top].n && m[cat].last > m[top].last)) top = cat;
+    });
+    return top ? { category: top, source: 'history' } : null;
+  }
+
+  function applyAutoCategories(rows) {
+    var idx = historyIndex();
+    rows.forEach(function (row) {
+      if (row.category) return;
+      var sug = suggestCategory(row.description, idx);
+      if (sug) { row.category = sug.category; row.auto = sug.source; }
+    });
+  }
+
+  function ruleCategoryOptions(selected) {
+    return state.categories.map(function (c) {
+      return '<option value="' + c.replace(/"/g, '&quot;') + '"' + (c === selected ? ' selected' : '') + '>' + c.replace(/</g, '&lt;') + '</option>';
+    }).join('');
+  }
+
+  function rulesManageMarkup() {
+    return '<div class="field"><label>Auto-categories</label>' +
+      '<p class="hint" style="margin:0 0 8px;">When a purchase description contains the text, it gets that category. If no rule matches, Ledger uses what the same shop was filed as before.</p>' +
+      '<div id="ruleManageList"></div>' +
+      '<div class="cat-add-row"><input type="text" id="newRuleText" placeholder="Text, e.g. ICA" autocomplete="off">' +
+      '<select id="newRuleCat" class="rule-select" aria-label="Category"></select>' +
+      '<button type="button" class="btn btn-secondary" id="addRuleBtn">Add</button></div></div>';
+  }
+
+  function saveRules() {
+    saveCatRules();
+    touchSetting('rules');
+    scheduleSync();
+  }
+
+  function renderRuleList() {
+    var wrap = document.getElementById('ruleManageList');
+    if (!wrap) return;
+    wrap.innerHTML = state.catRules.map(function (r, i) {
+      var known = state.categories.indexOf(r.category) !== -1;
+      return '<div class="cat-manage-row">' +
+        '<input type="text" class="cat-manage-input rule-text" data-idx="' + i + '" value="' + r.text.replace(/"/g, '&quot;') + '" aria-label="Text">' +
+        '<select class="rule-select rule-cat" data-idx="' + i + '" aria-label="Category">' +
+        (known ? '' : '<option value="' + r.category.replace(/"/g, '&quot;') + '" selected>' + r.category.replace(/</g, '&lt;') + ' (removed)</option>') +
+        ruleCategoryOptions(r.category) + '</select>' +
+        '<button type="button" class="cat-manage-del rule-del" data-idx="' + i + '" aria-label="Delete rule">\u00d7</button></div>';
+    }).join('');
+    wrap.querySelectorAll('.rule-text').forEach(function (inp) {
+      inp.addEventListener('change', function () {
+        var i = +inp.dataset.idx, v = inp.value.trim();
+        if (!v) { inp.value = state.catRules[i].text; return; }
+        state.catRules[i].text = v.slice(0, 60);
+        saveRules();
+      });
+    });
+    wrap.querySelectorAll('.rule-cat').forEach(function (sel) {
+      sel.addEventListener('change', function () { state.catRules[+sel.dataset.idx].category = sel.value; saveRules(); });
+    });
+    wrap.querySelectorAll('.rule-del').forEach(function (btn) {
+      btn.addEventListener('click', function () { state.catRules.splice(+btn.dataset.idx, 1); saveRules(); renderRuleList(); });
+    });
+    var newSel = document.getElementById('newRuleCat');
+    if (newSel) {
+      var cur = newSel.value;
+      newSel.innerHTML = ruleCategoryOptions(cur || state.categories[0]);
+    }
+  }
+
+  function addCategoryRule(text, category) {
+    var t = String(text || '').trim().slice(0, 60);
+    if (!t || state.categories.indexOf(category) === -1) return false;
+    var lower = t.toLowerCase();
+    var existing = state.catRules.filter(function (r) { return r.text.toLowerCase() === lower; })[0];
+    if (existing) existing.category = category;
+    else state.catRules.push({ text: t, category: category });
+    saveRules();
+    return true;
+  }
+
+  function bindRulesManage() {
+    renderRuleList();
+    document.getElementById('addRuleBtn').addEventListener('click', function () {
+      var inp = document.getElementById('newRuleText');
+      if (addCategoryRule(inp.value, document.getElementById('newRuleCat').value)) {
+        inp.value = '';
+        renderRuleList();
+      }
     });
   }
 
@@ -3797,6 +3994,7 @@
       bucketConfigMarkup() +
       badgesMarkup() +
       categoriesManageMarkup() +
+      rulesManageMarkup() +
       '<div id="oneDriveSection">' + oneDriveMarkup() + '</div>' +
       '<div class="panel-actions">' +
       '<button class="btn btn-secondary" id="cancelSettings">Cancel</button>' +
@@ -3849,6 +4047,7 @@
     });
     document.getElementById('exportCsvBtn').addEventListener('click', downloadCsv);
     bindCategoryManage();
+    bindRulesManage();
     bindBadgeRowClicks('badgeRow');
     bindBadgeRowClicks('funMilestoneRow');
   }
@@ -3924,6 +4123,7 @@
   function runImportParse(text) {
     var rows = parseImportText(text);
     parsedRows = rows.map(function (r) { return { amount: r.amount, description: r.description, date: r.date, category: null, include: true }; });
+    applyAutoCategories(parsedRows);
     flagDuplicates();
     renderParsedRows();
   }
@@ -4169,7 +4369,11 @@
         state.categories.map(function (c) {
           return '<option value="' + c.replace(/"/g, '&quot;') + '"' + (row.category === c ? ' selected' : '') + '>' + c + '</option>';
         }).join('') +
-        '</select></div>';
+        '</select>' + (row.auto && row.category ? '<span class="auto-tag" title="' + (row.auto === 'rule' ? 'From your auto-category rules' : 'Same as the last time you bought here') + '">auto</span>' : '') +
+        '</div>' +
+        (row.remember ? '<div class="remember-note" data-idx="' + i + '">Always use <b>' + row.remember.category.replace(/</g, '&lt;') + '</b> for \u201c' + row.remember.text.replace(/</g, '&lt;') + '\u201d? ' +
+          '<button type="button" class="remember-yes" data-idx="' + i + '">Remember</button>' +
+          '<button type="button" class="remember-no" data-idx="' + i + '">No</button></div>' : '');
     });
     html += '</div>';
     var body = document.getElementById('scanBody');
@@ -4188,7 +4392,30 @@
       });
     });
     body.querySelectorAll('.scan-cat').forEach(function (el) {
-      el.addEventListener('change', function () { parsedRows[+el.dataset.idx].category = el.value || null; });
+      el.addEventListener('change', function () {
+        var row = parsedRows[+el.dataset.idx];
+        row.category = el.value || null;
+        row.auto = null;
+        row.remember = null;
+        // offer to remember the choice if a rule would not already give it
+        if (row.category) {
+          var key = merchantKey(row.description);
+          var sug = suggestCategory(row.description, null);
+          if (key && !(sug && sug.category === row.category)) row.remember = { text: key.replace(/\b\w/g, function (ch) { return ch.toUpperCase(); }), category: row.category };
+        }
+        renderParsedRows();
+      });
+    });
+    body.querySelectorAll('.remember-yes').forEach(function (el) {
+      el.addEventListener('click', function () {
+        var row = parsedRows[+el.dataset.idx];
+        if (row.remember) addCategoryRule(row.remember.text, row.remember.category);
+        row.remember = null;
+        renderParsedRows();
+      });
+    });
+    body.querySelectorAll('.remember-no').forEach(function (el) {
+      el.addEventListener('click', function () { parsedRows[+el.dataset.idx].remember = null; renderParsedRows(); });
     });
   }
 
@@ -4372,6 +4599,7 @@
       parsedRows = ocrParseText(result.data.text || '', new Date()).map(function (r) {
         return { amount: r.amount, description: r.description, date: r.date, category: null, include: true };
       });
+      applyAutoCategories(parsedRows);
       flagDuplicates();
       renderParsedRows();
     } catch (e) {
@@ -4405,6 +4633,7 @@
             date: d, category: null, include: true
           };
         });
+      applyAutoCategories(parsedRows);
       flagDuplicates();
       renderParsedRows();
     } catch (e) {
